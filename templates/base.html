@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ManageVet{% endblock %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 1100px; padding: 1rem; color: #1f2933; background: #fff; }
+    table { border-collapse: collapse; margin: .5rem 0 1.5rem; }
+    th, td { padding: .3rem .6rem; border-bottom: 1px solid #e4e7eb; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    .map { display: grid; gap: 1px; background: #cbd2d9; width: fit-content; }
+    .cell { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+    .clinic { background: #c0392b !important; color: #fff; border-radius: 50%; }
+    .neg { color: #c0392b; }
+    nav a { margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <nav><a href="{% url 'game:server_list' %}">Parties</a><a href="{% url 'admin:index' %}">Administration</a></nav>
+  {% block content %}{% endblock %}
+</body>
+</html>

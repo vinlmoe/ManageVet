@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ server.name }}{% endblock %}
+{% block content %}
+<h1>{{ server.name }}</h1>
+<p>{{ server.get_status_display }} — trimestre {{ server.current_quarter }}/{{ server.total_quarters }}
+{% if server.next_resolution_at %}— prochaine résolution le {{ server.next_resolution_at|date:"l j F à H:i" }}{% endif %}</p>
+
+<h2>Carte</h2>
+<p>Intensité du vert = densité d'animaux ; cercles rouges = cliniques.</p>
+<div class="map" style="grid-template-columns: repeat({{ server.grid_width }}, 26px);">
+{% for row in rows %}{% for cell in row %}
+  {% if cell.clinic %}
+  <a class="cell clinic" href="{% url 'game:clinic_dashboard' cell.clinic.pk %}" title="{{ cell.clinic.name }}">{{ cell.clinic.pk }}</a>
+  {% else %}
+  <div class="cell" style="background: rgba(39, 174, 96, {{ cell.density|floatformat:2 }});" title="({{ cell.x }},{{ cell.y }}) {{ cell.animals }} animaux"></div>
+  {% endif %}
+{% endfor %}{% endfor %}
+</div>
+
+{% if ranking %}
+<h2>Classement — trimestre {{ last_quarter }}</h2>
+<table>
+  <tr><th>Clinique</th><th>Résultat</th><th>Part de marché</th><th>Trésorerie</th></tr>
+  {% for r in ranking %}
+  <tr><td><a href="{% url 'game:clinic_dashboard' r.pk %}">{{ r.name }}</a></td>
+      <td>{{ r.reports__net_result|floatformat:0 }} €</td>
+      <td>{% widthratio r.reports__market_share 1 100 %} %</td>
+      <td>{{ r.cash|floatformat:0 }} €</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

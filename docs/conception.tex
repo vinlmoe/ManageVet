@@ -1,0 +1,253 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{ManageVet\\[0.3em]\large Simulation économique de clinique vétérinaire\\Document de conception --- version 0.1}
+\author{}
+\date{Octobre 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Concept}
+
+Chaque joueur (étudiant vétérinaire) dirige une clinique pendant une année
+simulée découpée en quatre trimestres. Un trimestre de jeu correspond à une
+semaine réelle : les décisions sont saisies au fil de la semaine et stockées
+\emph{en attente} ; une tâche planifiée unique résout ensuite le trimestre
+pour toutes les cliniques d'un même serveur. Aucun calcul en temps réel n'est
+nécessaire et la micro-gestion est évitée.
+
+Une dizaine de cliniques partagent une carte commune et se disputent une
+patientèle simulée, qui arbitre selon le prix, la distance, l'offre de
+services et la réputation.
+
+\section{Architecture du dépôt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Application & Rôle \\
+\midrule
+\code{config} & Configuration Django (paramètres lus dans l'environnement). \\
+\code{game} & Serveur de jeu, carte et zones de population, catalogue de référence, vues, commandes de gestion. \\
+\code{clinics} & Clinique, prestations et prix pratiqués, personnel, matériel (achat ou leasing). \\
+\code{inventory} & Gammes de produits, stocks, réassort automatique, valorisation au CMUP. \\
+\code{accounting} & Extrait du PCG, écritures en partie double, rapports trimestriels. \\
+\code{decisions} & Décisions en attente et leur application à la résolution. \\
+\code{engine} & Moteur : modèle de demande (pur Python) et résolution d'un trimestre. \\
+\bottomrule
+\end{tabularx}
+
+\medskip
+Le module \code{engine.demand} ne dépend pas de Django : il est testable
+isolément et réutilisable pour des simulations hors ligne.
+
+\section{Modèle de données}
+
+\begin{description}[style=nextline]
+\item[\code{GameServer}] Partie : dimensions de la grille, trimestre courant,
+  nombre total de trimestres, échéance de la prochaine résolution, graine
+  aléatoire, surcharges de paramètres (JSON) pour les stress tests.
+\item[\code{PopulationZone}] Une case de la grille : nombre de chiens et de
+  chats, sensibilité au prix.
+\item[\code{Clinic}] Position, propriétaire (un joueur par serveur),
+  trésorerie, loyer, honoraires de l'expert-comptable, réputation
+  $r \in [0,1]$.
+\item[\code{ServiceType} / \code{ClinicService}] Catalogue des actes (prix de
+  référence, fréquence par animal, temps vétérinaire et ASV, consommables,
+  matériel requis) et prix pratiqué par chaque clinique.
+\item[\code{StaffMember}] Vétérinaire ou ASV, salaire brut mensuel,
+  trimestres d'entrée et de sortie.
+\item[\code{EquipmentType} / \code{ClinicEquipment}] Matériel acquis par achat
+  (immobilisé et amorti) ou par leasing (charge trimestrielle).
+\item[\code{ProductLine} / \code{StockItem}] Gamme de produits ; stock d'une
+  clinique avec quantité, CMUP, niveau de réassort cible et prix de vente.
+\item[\code{PendingDecision}] Type, charge utile JSON, statut (en attente,
+  appliquée, rejetée, annulée), message.
+\item[\code{JournalEntry} / \code{JournalLine}] Écriture en partie double ;
+  l'équilibre débit/crédit est vérifié à la saisie.
+\item[\code{QuarterReport}] Synthèse figée d'un trimestre : compte de
+  résultat recalculé depuis le journal, indicateurs d'activité.
+\end{description}
+
+\paragraph{Invariant.} La trésorerie \code{Clinic.cash} est une valeur
+dénormalisée, modifiée uniquement par la passation d'écritures ; elle est en
+permanence égale au solde du compte 512. Ce point est vérifié par les tests.
+
+\section{Carte et positionnement}
+
+La carte est une grille abstraite de $W \times H$ cases (par défaut
+$20 \times 20$, une case $= 2$~km). La population d'une case $(x,y)$ est
+la somme d'un fond rural et de quelques villes gaussiennes de centres
+$(c_x^k, c_y^k)$ et de taille $s_k$ :
+\[
+  N(x,y) = N_{\text{rural}}\,u + N_{\text{ville}} \sum_k s_k
+  \exp\!\left(-\frac{(x-c_x^k)^2 + (y-c_y^k)^2}{2\sigma^2}\right),
+  \qquad u \sim \mathcal{U}(0{,}6\,;\,1{,}4).
+\]
+La proportion de chats augmente en ville ; la sensibilité au prix est plus
+forte à la campagne. Chaque clinique occupe une case distincte ; les
+distances sont euclidiennes. Ce choix suffit à créer des marchés urbains
+denses et concurrentiels et des zones rurales peu servies, sans données
+géographiques réelles.
+
+\section{Moteur de résolution}
+
+\subsection{Ordre des étapes}
+
+\begin{enumerate}
+  \item Application des décisions en attente (chacune dans un point de
+    sauvegarde : une décision rejetée ne laisse aucune trace).
+  \item Réassort automatique jusqu'au niveau cible (compte 607).
+  \item Répartition de la patientèle entre toutes les cliniques.
+  \item Pour chaque clinique : actes plafonnés par la capacité (706 et 6022),
+    ventes plafonnées par le stock (707), salaires et charges sociales (641,
+    645), loyer (6132), honoraires (6226), autres charges (628), leasing
+    (6122), dotations (6811), variation de stock (6037), agios (6615).
+  \item Mise à jour de la réputation et rapport trimestriel.
+  \item Passage au trimestre suivant ou fin de partie.
+\end{enumerate}
+
+L'ensemble est exécuté dans une seule transaction. Le hasard provient d'un
+générateur initialisé par (graine, trimestre, position de la clinique) : la
+résolution est reproductible.
+
+\subsection{Choix de la clinique : modèle logit}
+
+Pour une zone $z$ et une clinique $c$ :
+\[
+  U_{zc} = \alpha - \beta_d\, d_{zc} - \beta_p\,(I_c - 1)\,\sigma_z
+  + \beta_o\,(O_c - 1) + \beta_r\,(r_c - 0{,}5)
+\]
+où $d_{zc}$ est la distance en km, $I_c$ l'indice de prix de la clinique,
+$\sigma_z$ la sensibilité au prix de la zone, $O_c \in [0,1]$ la part
+pondérée des services proposés et $r_c$ la réputation. Avec une option
+extérieure d'utilité $U_0$ (ne pas consulter ce trimestre) :
+\[
+  s_{zc} = \frac{e^{U_{zc}}}{e^{U_0} + \sum_{c'} e^{U_{zc'}}},
+  \qquad
+  A_c = \mu \sum_z N_z\, s_{zc},
+\]
+$\mu$ étant un multiplicateur global de demande. Les poids de l'indice de
+prix et du ratio d'offre sont ceux du panier de référence,
+$w_k = p_k^{\text{réf}} f_k$ :
+\[
+  I_c = \frac{\sum_{k \in \mathcal{S}_c} w_k\, p_{ck}/p_k^{\text{réf}}}{\sum_{k \in \mathcal{S}_c} w_k},
+  \qquad
+  O_c = \frac{\sum_{k \in \mathcal{S}_c} w_k}{\sum_k w_k}.
+\]
+
+\subsection{Actes et capacité}
+
+Le volume demandé pour l'acte $k$ vaut
+$q_{ck} = A_c\, f_k\, (p_{ck}/p_k^{\text{réf}})^{-\varepsilon_s}\,(1+\eta)$,
+avec $\eta$ un aléa uniforme de faible amplitude. La capacité est le temps
+disponible du personnel ; le taux de service est
+\[
+  \kappa_c = \min\!\left(1,\;
+  \frac{n^{\text{véto}}_c\, H^{\text{véto}}}{\sum_k q_{ck}\, t^{\text{véto}}_k},\;
+  \frac{n^{\text{ASV}}_c\, H^{\text{ASV}}}{\sum_k q_{ck}\, t^{\text{ASV}}_k}\right)
+\]
+et les actes réalisés sont $\kappa_c\, q_{ck}$. La demande non servie est
+perdue en V1 (elle n'est pas redirigée vers les concurrents).
+
+\subsection{Ventes de produits et stocks}
+
+Les ventes de la gamme $g$ sont proportionnelles aux animaux effectivement
+reçus et plafonnées par le stock disponible :
+\[
+  v_{cg} = \min\!\left(Q_{cg},\;
+  \kappa_c\, A_c^{(\text{espèce})}\, u_g\,(p_{cg}/p_g^{\text{conseillé}})^{-\varepsilon_p}\right).
+\]
+Le réassort recomplète le stock jusqu'au niveau cible en début de
+trimestre ; le stock est valorisé au CMUP. La variation de stock
+$\Delta S = S_{\text{initial}} - S_{\text{final}}$ est passée au compte 6037,
+de sorte que le coût des marchandises vendues vaut $607 + 6037$.
+
+\subsection{Réputation}
+
+\[
+  r_c^{t+1} = \lambda\, r_c^t + (1-\lambda)\,\bigl(0{,}7\,\kappa_c + 0{,}3\,\phi_c\bigr),
+\]
+où $\phi_c$ est le taux de service du stock et $\lambda$ l'inertie.
+
+\section{Comptabilité}
+
+Écritures types (montants HT) :
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Opération & Débit & Crédit \\
+\midrule
+Apport en capital & 512 & 101 \\
+Achat de matériel & 2154 & 512 \\
+Dotation aux amortissements (linéaire) & 6811 & 28154 \\
+Loyer de leasing & 6122 & 512 \\
+Réassort & 607 & 512 \\
+Prestations & 512 & 706 \\
+Ventes de marchandises & 512 & 707 \\
+Salaires / charges patronales & 6411 / 645 & 512 \\
+Loyer / honoraires / divers & 6132 / 6226 / 628 & 512 \\
+Hausse de stock (baisse : inverse) & 37 & 6037 \\
+Agios & 6615 & 512 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Simplifications assumées en V1.} Pas de TVA (neutre pour une
+clinique assujettie) ; règlements au comptant (pas de comptes 401, 411, 421,
+431) ; un salarié recruté est payé sur le trimestre entier ; pas de cession
+de matériel acheté ; pas d'impôt sur les sociétés ni de clôture annuelle.
+
+\section{Paramètres et stress tests}
+
+Tous les coefficients sont regroupés dans \code{engine/parameters.py}
+(classe \code{SimulationParameters}). Un serveur peut en surcharger une
+partie via son champ JSON \code{parameters}, par exemple :
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Scénario & Surcharge \\
+\midrule
+Choc de demande & \code{demand\_multiplier = 0.7} \\
+Inflation fournisseurs & \code{purchase\_cost\_multiplier = 1.25} \\
+Hausse des charges sociales & \code{employer\_contribution\_rate = 0.50} \\
+Clientèle plus sensible au prix & \code{beta\_price = 5} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Planification}
+
+La commande \code{resolve\_quarters} résout tous les serveurs dont
+l'échéance est passée ; il suffit de l'appeler par \code{cron} (ou un timer
+systemd) une fois par semaine. Une file de tâches (Celery) n'est pas
+nécessaire tant que le calcul d'un serveur reste de l'ordre de la seconde.
+
+\section{Pistes pour les versions suivantes}
+
+\begin{itemize}
+  \item Interface joueur de saisie des décisions (formulaires) et
+    authentification des étudiants.
+  \item Redirection de la demande non servie vers les cliniques voisines.
+  \item TVA, comptes de tiers, emprunts bancaires, bilan et clôture annuelle.
+  \item Événements aléatoires (épidémie, départ d'un salarié) et tableau de
+    bord enseignant comparant les stratégies.
+  \item Calibrage des paramètres avec des données réelles de la profession.
+\end{itemize}
+
+\end{document}
