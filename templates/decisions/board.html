@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Décisions – {{ clinic.name }}{% endblock %}
+{% block content %}
+<h1>Décisions — {{ clinic.name }}</h1>
+<p>
+  <a href="{% url 'game:clinic_dashboard' clinic.pk %}">Tableau de bord</a> ·
+  <a href="{% url 'game:server_map' server.pk %}">Carte de « {{ server.name }} »</a>
+</p>
+<p>
+  <strong>Trimestre {{ quarter }}/{{ server.total_quarters }}</strong>
+  {% if server.next_resolution_at %}— résolution le <strong>{{ server.next_resolution_at|date:"l j F à H:i" }}</strong>{% endif %}
+  — trésorerie actuelle <strong class="{% if clinic.cash < 0 %}neg{% endif %}">{{ clinic.cash|floatformat:0 }} €</strong>
+</p>
+{% if not can_edit %}
+<ul class="messages"><li class="error">La partie n'est pas en cours : les décisions sont en lecture seule.</li></ul>
+{% endif %}
+<p class="muted">Rien n'est appliqué immédiatement : vos décisions sont enregistrées et appliquées toutes ensemble
+lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jusque-là.</p>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Décisions en attente {% if pending_rows %}({{ pending_rows|length }}){% endif %}</h2>
+  {% if pending_rows %}
+  <div class="table-scroll"><table>
+    <tr><th>Décision</th><th>Impact trésorerie estimé</th><th></th></tr>
+    {% for d, label, impact in pending_rows %}
+    <tr>
+      <td>{{ label }}</td>
+      <td>{% if impact is not None %}<span class="{% if impact < 0 %}neg{% endif %}">{{ impact|floatformat:0 }} €</span>{% endif %}</td>
+      <td>{% if can_edit %}<form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel"><input type="hidden" name="object_id" value="{{ d.pk }}">
+        <button class="danger">Annuler</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    <tr><th>Total des engagements chiffrés</th><th class="{% if pending_cash_impact < 0 %}neg{% endif %}">{{ pending_cash_impact|floatformat:0 }} €</th><th></th></tr>
+  </table></div>
+  <p class="muted">Coûts sur le trimestre : un recrutement inclut 3 mois de salaire et {% widthratio params.employer_contribution_rate 1 100 %} % de charges patronales.</p>
+  {% else %}
+  <p class="muted">Aucune décision en attente pour ce trimestre.</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Tarifs et offre de soins</h2>
+  <p class="muted">Indice de prix et étendue de l'offre pèsent sur le choix de la patientèle ; chaque acte a aussi sa propre élasticité au prix.</p>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="services">
+    {{ services_form.non_field_errors }}
+    <div class="table-scroll"><table>
+      <tr><th>Prestation</th><th>Prix de référence</th><th>Votre prix HT</th><th>Proposée</th><th>Temps véto / ASV</th></tr>
+      {% for cs, price, active in services_form.bound_rows %}
+      <tr>
+        <td>{{ cs.service_type.name }}
+          {% if cs.service_type.required_equipment and active.field.disabled %}<br><span class="tag">nécessite : {{ cs.service_type.required_equipment.name }}</span>{% endif %}</td>
+        <td class="muted">{{ cs.service_type.reference_price|floatformat:0 }} €</td>
+        <td>{{ price }} {{ price.errors }}</td>
+        <td>{{ active }}</td>
+        <td class="muted">{{ cs.service_type.vet_minutes }} / {{ cs.service_type.asv_minutes }} min</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% if can_edit %}<button>Enregistrer les tarifs</button>{% endif %}
+  </form>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Produits et réassort</h2>
+  <p class="muted">En début de trimestre, chaque gamme est automatiquement recomplétée jusqu'au niveau de réassort (achat au prix fournisseur).
+    Un stock trop bas fait perdre des ventes et de la réputation ; un stock trop haut immobilise de la trésorerie.</p>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="products">
+    <div class="table-scroll"><table>
+      <tr><th>Gamme</th><th>Coût d'achat</th><th>Prix conseillé</th><th>Votre prix HT</th><th>Stock actuel</th><th>Niveau de réassort</th></tr>
+      {% for item, price, target in products_form.bound_rows %}
+      <tr>
+        <td>{{ item.product_line.name }}</td>
+        <td class="muted">{{ item.product_line.unit_cost|floatformat:2 }} €</td>
+        <td class="muted">{{ item.product_line.recommended_price|floatformat:2 }} €</td>
+        <td>{{ price }} {{ price.errors }}</td>
+        <td>{{ item.quantity }}</td>
+        <td>{{ target }} {{ target.errors }}</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% if can_edit %}<button>Enregistrer les produits</button>{% endif %}
+  </form>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Personnel</h2>
+  <p class="muted">Capacité par trimestre : {{ params.vet_hours_per_quarter|floatformat:0 }} h facturables par vétérinaire,
+    {{ params.asv_hours_per_quarter|floatformat:0 }} h par ASV. Au-delà, la demande n'est pas servie.</p>
+  <div class="table-scroll"><table>
+    <tr><th>Salarié</th><th>Poste</th><th>Brut mensuel</th><th>Depuis</th><th></th></tr>
+    {% for m, leaving in staff %}
+    <tr>
+      <td>{{ m.name }}</td><td>{{ m.get_role_display }}</td><td>{{ m.gross_monthly_salary|floatformat:0 }} €</td><td>T{{ m.hired_quarter }}</td>
+      <td>{% if leaving %}<span class="tag">départ programmé</span>
+          {% elif can_edit %}<form method="post">{% csrf_token %}
+            <input type="hidden" name="action" value="dismiss"><input type="hidden" name="object_id" value="{{ m.pk }}">
+            <button class="danger">Se séparer</button></form>{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="5">Aucun salarié.</td></tr>{% endfor %}
+  </table></div>
+  <p class="muted">Un départ coûte {{ params.severance_months|floatformat:1 }} mois de brut d'indemnité ; le salaire du trimestre en cours reste dû.</p>
+  {% if can_edit %}
+  <h3>Recruter</h3>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="hire">
+    {{ hire_form.non_field_errors }}
+    {% for field in hire_form %}<label>{{ field.label }} {{ field }}</label> {{ field.errors }} {% endfor %}
+    <button>Programmer le recrutement</button>
+  </form>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Matériel</h2>
+  <p class="muted">Achat : décaissement immédiat, immobilisation amortie linéairement. Leasing : loyer trimestriel en charge, résiliable.
+    Le matériel débloque les prestations associées.</p>
+  {% if owned_equipment %}
+  <h3>Équipement de la clinique</h3>
+  <div class="table-scroll"><table>
+    <tr><th>Matériel</th><th>Mode</th><th>Coût</th><th></th></tr>
+    {% for e, releasing in owned_equipment %}
+    <tr>
+      <td>{{ e.equipment_type.name }}</td><td>{{ e.get_mode_display }}</td>
+      <td>{% if e.mode == "lease" %}{{ e.lease_per_quarter|floatformat:0 }} € / trim.{% else %}{{ e.purchase_price|floatformat:0 }} € (amorti {{ e.accumulated_depreciation|floatformat:0 }} €){% endif %}</td>
+      <td>{% if releasing %}<span class="tag">résiliation programmée</span>
+          {% elif e.mode == "lease" and can_edit %}<form method="post">{% csrf_token %}
+            <input type="hidden" name="action" value="release"><input type="hidden" name="object_id" value="{{ e.pk }}">
+            <button class="danger">Résilier</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  {% if catalog %}
+  <h3>Catalogue</h3>
+  <div class="table-scroll"><table>
+    <tr><th>Matériel</th><th>Prix d'achat</th><th>Leasing / trim.</th><th>Amortissement</th><th></th></tr>
+    {% for eq, planned in catalog %}
+    <tr>
+      <td>{{ eq.name }}<br><span class="muted">{% for s in eq.services.all %}{{ s.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></td>
+      <td>{{ eq.purchase_price|floatformat:0 }} €</td>
+      <td>{{ eq.lease_per_quarter|floatformat:0 }} €</td>
+      <td class="muted">{{ eq.useful_life_quarters }} trim.</td>
+      <td>{% if planned %}<span class="tag">acquisition programmée</span>{% endif %}
+        {% if can_edit %}<form method="post" style="display:inline">{% csrf_token %}
+          <input type="hidden" name="action" value="acquire"><input type="hidden" name="equipment" value="{{ eq.code }}">
+          <button name="mode" value="purchase" class="secondary">Acheter</button>
+          <button name="mode" value="lease" class="secondary">Louer</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+{% if history %}
+<section class="card">
+  <h2>Historique</h2>
+  <div class="table-scroll"><table>
+    {% for d in history %}
+    <tr><td>T{{ d.quarter }} — {{ d.get_kind_display }}</td>
+        <td><span class="{% if d.status == 'rejected' %}neg{% elif d.status == 'applied' %}pos{% else %}muted{% endif %}">{{ d.get_status_display }}</span></td>
+        <td class="muted left">{{ d.message }}</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

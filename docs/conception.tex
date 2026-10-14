@@ -231,6 +231,31 @@ Clientèle plus sensible au prix & \code{beta\_price = 5} \\
 \end{tabular}
 \end{center}
 
+\section{Écran de décisions du joueur}
+
+Le joueur saisit ses décisions sur une page unique
+(\code{/clinics/<id>/decisions/}), organisée en blocs : tarifs et offre de
+soins, produits et réassort, personnel, matériel. Chaque formulaire crée des
+\code{PendingDecision} pour le trimestre en cours ; rien n'est appliqué
+avant la résolution.
+
+\begin{itemize}
+  \item \textbf{Valeurs planifiées.} Les formulaires affichent l'état actuel
+    corrigé des décisions en attente. Une nouvelle saisie portant sur la même
+    prestation (ou gamme, ou matériel) annule et remplace la précédente ;
+    revenir à la valeur actuelle annule simplement la décision.
+  \item \textbf{Impact estimé.} Chaque décision en attente est accompagnée de
+    son effet sur la trésorerie du trimestre (salaire chargé sur trois mois,
+    prix d'achat ou loyer de leasing, indemnité de départ).
+  \item \textbf{Validation.} Les erreurs de saisie (prix négatif, salaire
+    sous le minimum) sont signalées immédiatement ; les règles dépendant de
+    l'état au moment de la résolution restent vérifiées par le moteur.
+  \item \textbf{Confidentialité.} Un joueur n'accède qu'à sa clinique ;
+    l'équipe pédagogique (\code{is\_staff}) accède à toutes.
+  \item \textbf{Concurrence.} La création d'une décision verrouille le
+    serveur de jeu : elle ne peut pas viser un trimestre déjà résolu.
+\end{itemize}
+
 \section{Planification}
 
 La commande \code{resolve\_quarters} résout tous les serveurs dont
@@ -241,8 +266,8 @@ nécessaire tant que le calcul d'un serveur reste de l'ordre de la seconde.
 \section{Pistes pour les versions suivantes}
 
 \begin{itemize}
-  \item Interface joueur de saisie des décisions (formulaires) et
-    authentification des étudiants.
+  \item Inscription des étudiants et création de leur clinique (choix de
+    l'emplacement sur la carte) sans passer par l'admin.
   \item Redirection de la demande non servie vers les cliniques voisines.
   \item TVA, comptes de tiers, emprunts bancaires, bilan et clôture annuelle.
   \item Événements aléatoires (épidémie, départ d'un salarié) et tableau de

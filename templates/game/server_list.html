@@ -1,11 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Parties</h1>
-<ul>
-{% for s in servers %}
-  <li><a href="{% url 'game:server_map' s.pk %}">{{ s.name }}</a> — {{ s.get_status_display }}, trimestre {{ s.current_quarter }}/{{ s.total_quarters }}</li>
+<table>
+  <tr><th>Partie</th><th>État</th><th>Trimestre</th><th>Ma clinique</th></tr>
+{% for s, mine in servers %}
+  <tr>
+    <td><a href="{% url 'game:server_map' s.pk %}">{{ s.name }}</a></td>
+    <td>{{ s.get_status_display }}</td>
+    <td>{{ s.current_quarter }}/{{ s.total_quarters }}</td>
+    <td>{% if mine %}<a href="{% url 'game:clinic_dashboard' mine.pk %}">{{ mine.name }}</a>
+        {% if s.status == "running" %} — <a href="{% url 'decisions:board' mine.pk %}"><strong>Décisions</strong></a>{% endif %}
+        {% else %}<span class="muted">—</span>{% endif %}</td>
+  </tr>
 {% empty %}
-  <li>Aucune partie. Lancez <code>python manage.py seed_demo</code>.</li>
+  <tr><td colspan="4">Aucune partie. Lancez <code>python manage.py seed_demo</code>.</td></tr>
 {% endfor %}
-</ul>
+</table>
 {% endblock %}

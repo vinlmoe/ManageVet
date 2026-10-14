@@ -26,9 +26,23 @@ python manage.py resolve_quarters --server 1 --quarters 4
 python manage.py runserver                        # http://127.0.0.1:8000/
 ```
 
-Les décisions des joueurs se saisissent pour l'instant via l'admin
-(`/admin/decisions/pendingdecision/`) ; la carte et les tableaux de bord sont
-consultables sur `/`.
+## Côté joueur
+
+Chaque étudiant se connecte (`/accounts/login/`) et accède depuis la liste des
+parties à sa clinique et à son **écran de décisions**
+(`/clinics/<id>/decisions/`) :
+
+- tarifs des prestations et activation de l'offre de soins ;
+- prix de vente et niveau de réassort des gammes de produits ;
+- recrutements et départs (vétérinaires, ASV) ;
+- achat ou leasing de matériel, résiliation d'un leasing ;
+- liste des décisions en attente avec leur impact estimé sur la trésorerie,
+  et possibilité de les annuler jusqu'à la résolution.
+
+Une nouvelle saisie sur la même prestation ou la même gamme remplace la
+décision en attente. Un joueur ne voit que sa propre clinique (comptes et
+décisions) ; les comptes `is_staff` (équipe pédagogique) voient tout et ont
+accès à l'admin. Les comptes étudiants se créent via l'admin pour l'instant.
 
 ## Stress tests
 

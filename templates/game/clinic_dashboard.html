@@ -4,6 +4,9 @@
 <h1>{{ clinic.name }}</h1>
 <p><a href="{% url 'game:server_map' clinic.server.pk %}">{{ clinic.server }}</a> — case ({{ clinic.x }}, {{ clinic.y }}) —
 trésorerie {{ clinic.cash|floatformat:2 }} € (compte 512 : {{ bank_balance|floatformat:2 }} €) — réputation {{ clinic.reputation|floatformat:2 }}</p>
+{% if clinic.server.status == "running" %}
+<p><a class="button" href="{% url 'decisions:board' clinic.pk %}">Prendre mes décisions du trimestre {{ clinic.server.current_quarter }}</a></p>
+{% endif %}
 
 <h2>Comptes de résultat trimestriels (HT)</h2>
 <table>

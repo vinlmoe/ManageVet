@@ -12,7 +12,7 @@ class ViewsSmokeTests(TestCase):
         call_command("seed_demo", clinics=4, stdout=open("/dev/null", "w"))
         self.server = GameServer.objects.get()
         resolve_quarter(self.server)
-        self.user = get_user_model().objects.create_user("prof", password="x")
+        self.user = get_user_model().objects.create_user("prof", is_staff=True)
         self.client.force_login(self.user)
 
     def test_pages_render(self):

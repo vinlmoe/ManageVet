@@ -6,11 +6,15 @@
 {% if server.next_resolution_at %}— prochaine résolution le {{ server.next_resolution_at|date:"l j F à H:i" }}{% endif %}</p>
 
 <h2>Carte</h2>
-<p>Intensité du vert = densité d'animaux ; cercles rouges = cliniques.</p>
+<p>Intensité du vert = densité d'animaux ; cercles rouges = cliniques concurrentes, bleu = la vôtre.</p>
 <div class="map" style="grid-template-columns: repeat({{ server.grid_width }}, 26px);">
 {% for row in rows %}{% for cell in row %}
   {% if cell.clinic %}
-  <a class="cell clinic" href="{% url 'game:clinic_dashboard' cell.clinic.pk %}" title="{{ cell.clinic.name }}">{{ cell.clinic.pk }}</a>
+  {% if cell.clinic.pk in visible_clinics %}
+  <a class="cell clinic{% if cell.clinic.owner_id == user.pk %} mine{% endif %}" href="{% url 'game:clinic_dashboard' cell.clinic.pk %}" title="{{ cell.clinic.name }}">{{ cell.clinic.pk }}</a>
+  {% else %}
+  <div class="cell clinic" title="{{ cell.clinic.name }}">{{ cell.clinic.pk }}</div>
+  {% endif %}
   {% else %}
   <div class="cell" style="background: rgba(39, 174, 96, {{ cell.density|floatformat:2 }});" title="({{ cell.x }},{{ cell.y }}) {{ cell.animals }} animaux"></div>
   {% endif %}
@@ -22,7 +26,7 @@
 <table>
   <tr><th>Clinique</th><th>Résultat</th><th>Part de marché</th><th>Trésorerie</th></tr>
   {% for r in ranking %}
-  <tr><td><a href="{% url 'game:clinic_dashboard' r.pk %}">{{ r.name }}</a></td>
+  <tr><td>{% if r.pk in visible_clinics %}<a href="{% url 'game:clinic_dashboard' r.pk %}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td>
       <td>{{ r.reports__net_result|floatformat:0 }} €</td>
       <td>{% widthratio r.reports__market_share 1 100 %} %</td>
       <td>{{ r.cash|floatformat:0 }} €</td></tr>

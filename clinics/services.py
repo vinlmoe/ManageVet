@@ -16,6 +16,7 @@ from .models import Clinic, ClinicEquipment, ClinicService, EquipmentType, Servi
 
 DEFAULT_VET_SALARY = Decimal("4000")
 DEFAULT_ASV_SALARY = Decimal("1900")
+MIN_GROSS_MONTHLY_SALARY = Decimal("1800")  # minimum conventionnel simulé
 
 
 class OperationError(ValueError):
@@ -64,8 +65,8 @@ def create_clinic(
 def hire(clinic: Clinic, role: str, name: str, gross_monthly_salary: Decimal) -> StaffMember:
     if role not in StaffMember.Role.values:
         raise OperationError(f"Rôle inconnu : {role}")
-    if Decimal(gross_monthly_salary) < Decimal("1800"):
-        raise OperationError("Salaire inférieur au minimum conventionnel simulé (1 800 € brut).")
+    if Decimal(gross_monthly_salary) < MIN_GROSS_MONTHLY_SALARY:
+        raise OperationError(f"Salaire inférieur au minimum conventionnel simulé ({MIN_GROSS_MONTHLY_SALARY} € brut).")
     return StaffMember.objects.create(
         clinic=clinic,
         role=role,

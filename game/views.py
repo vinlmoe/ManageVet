@@ -1,7 +1,6 @@
-"""Vues en lecture seule : carte du serveur et tableau de bord d'une clinique.
+"""Vues en lecture seule : liste des parties, carte et tableau de bord d'une clinique.
 
-La saisie des décisions passe pour l'instant par l'admin ; une interface
-joueur dédiée viendra dans une itération suivante.
+La saisie des décisions est dans l'application ``decisions``.
 """
 
 from django.contrib.auth.decorators import login_required
@@ -9,14 +8,16 @@ from django.shortcuts import get_object_or_404, render
 
 from accounting.services import account_balance
 from accounting import pcg
-from clinics.models import Clinic
+from clinics.access import get_clinic_for_user
 
 from .models import GameServer
 
 
 @login_required
 def server_list(request):
-    return render(request, "game/server_list.html", {"servers": GameServer.objects.order_by("-created_at")})
+    my_clinics = {c.server_id: c for c in request.user.clinics.all()}
+    servers = [(s, my_clinics.get(s.pk)) for s in GameServer.objects.order_by("-created_at")]
+    return render(request, "game/server_list.html", {"servers": servers})
 
 
 @login_required
@@ -40,13 +41,24 @@ def server_map(request, pk):
         .order_by("-reports__net_result")
     )
     return render(
-        request, "game/server_map.html", {"server": server, "rows": rows, "ranking": ranking, "last_quarter": last_quarter}
+        request,
+        "game/server_map.html",
+        {
+            "server": server,
+            "rows": rows,
+            "ranking": ranking,
+            "last_quarter": last_quarter,
+            # Liens vers les tableaux de bord : sa propre clinique, ou toutes pour l'équipe pédagogique.
+            "visible_clinics": set(server.clinics.values_list("pk", flat=True))
+            if request.user.is_staff
+            else set(server.clinics.filter(owner=request.user).values_list("pk", flat=True)),
+        },
     )
 
 
 @login_required
 def clinic_dashboard(request, pk):
-    clinic = get_object_or_404(Clinic.objects.select_related("server"), pk=pk)
+    clinic = get_clinic_for_user(request.user, pk)
     entries = clinic.journal_entries.prefetch_related("lines").order_by("-quarter", "-id")[:60]
     return render(
         request,
