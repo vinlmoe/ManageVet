@@ -24,6 +24,10 @@ class ViewsSmokeTests(TestCase):
         ):
             self.assertEqual(self.client.get(url).status_code, 200, url)
 
+    def test_map_opacity_is_not_localized(self):
+        html = self.client.get(reverse("game:server_map", args=[self.server.pk])).content.decode()
+        self.assertNotRegex(html, r"rgba\(39, 174, 96, \d,")
+
     def test_demo_has_clinics_and_zones(self):
         self.assertEqual(self.server.clinics.count(), 4)
         self.assertEqual(self.server.zones.count(), self.server.grid_width * self.server.grid_height)

@@ -10,6 +10,7 @@ from django.db import transaction
 
 from accounting import pcg
 from accounting.services import money, post_entry
+from game.placement import rent_for_cell
 from inventory.models import ProductLine, StockItem
 
 from .models import Clinic, ClinicEquipment, ClinicService, EquipmentType, ServiceType, StaffMember
@@ -32,13 +33,20 @@ def create_clinic(
     y: int,
     initial_capital: Decimal = Decimal("80000"),
     with_default_staff: bool = True,
+    rent_per_quarter: Decimal | None = None,
 ) -> Clinic:
     if not (0 <= x < server.grid_width and 0 <= y < server.grid_height):
         raise OperationError("Position hors de la carte.")
     if server.clinics.filter(x=x, y=y).exists():
         raise OperationError("Une clinique occupe déjà cette case.")
+    if server.clinics.filter(owner=owner).exists():
+        raise OperationError("Ce joueur dirige déjà une clinique sur ce serveur.")
 
-    clinic = Clinic.objects.create(server=server, owner=owner, name=name, x=x, y=y)
+    if rent_per_quarter is None:
+        rent_per_quarter = rent_for_cell(server, x, y)
+    clinic = Clinic.objects.create(
+        server=server, owner=owner, name=name, x=x, y=y, rent_per_quarter=rent_per_quarter
+    )
     quarter = server.current_quarter
     post_entry(
         clinic,

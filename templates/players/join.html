@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% load l10n %}
+{% block title %}Rejoindre {{ server.name }}{% endblock %}
+{% block content %}
+<h1>Installer ma clinique — {{ server.name }}</h1>
+<p>{{ server.get_status_display }}, trimestre {{ server.current_quarter }}/{{ server.total_quarters }} —
+  {{ free_slots }} place{{ free_slots|pluralize }} libre{{ free_slots|pluralize }}.</p>
+<p class="muted">Choisissez une case libre. Chaque emplacement est un arbitrage : la patientèle accessible et le loyer
+  augmentent avec la densité, mais la concurrence aussi. Les propriétaires d'animaux préfèrent une clinique proche
+  (rayon de chalandise indicatif : {{ catchment_km|floatformat:0 }} km).</p>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <div class="join-layout">
+    <div class="table-scroll">
+      <div class="map pick-map" style="grid-template-columns: repeat({{ server.grid_width }}, 26px);">
+      {% for row in rows %}{% for cell in row %}
+        {% if cell.clinic %}
+        <div class="cell clinic" title="{{ cell.clinic.name }}"></div>
+        {% else %}
+        <label class="pick" title="({{ cell.insight.x }}, {{ cell.insight.y }})">
+          {% localize off %}<input type="radio" name="cell" value="{{ cell.value }}"{% if cell.value == selected %} checked{% endif %}
+                 data-x="{{ cell.insight.x }}" data-y="{{ cell.insight.y }}"
+                 data-animals="{{ cell.insight.animals }}" data-catchment="{{ cell.insight.catchment }}"
+                 data-nearest="{{ cell.insight.nearest_competitor_km|default_if_none:'' }}"
+                 data-competitors="{{ cell.insight.competitors_nearby }}" data-rent="{{ cell.insight.rent }}">{% endlocalize %}
+          <span class="cell" style="background: rgba(39, 174, 96, {{ cell.density|floatformat:"2u" }});"></span>
+        </label>
+        {% endif %}
+      {% endfor %}{% endfor %}
+      </div>
+    </div>
+
+    <aside class="card preview">
+      <h2>Emplacement</h2>
+      <p id="preview-empty" class="muted">Cliquez sur une case de la carte.</p>
+      <table id="preview" hidden>
+        <tr><td>Case</td><td id="p-cell"></td></tr>
+        <tr><td>Animaux sur la case</td><td id="p-animals"></td></tr>
+        <tr><td>Animaux à moins de {{ catchment_km|floatformat:0 }} km</td><td id="p-catchment"></td></tr>
+        <tr><td>Concurrents à moins de {{ catchment_km|floatformat:0 }} km</td><td id="p-competitors"></td></tr>
+        <tr><td>Concurrent le plus proche</td><td id="p-nearest"></td></tr>
+        <tr><td>Loyer trimestriel HT</td><td id="p-rent"></td></tr>
+      </table>
+      {{ form.cell.errors }}
+      <p><label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label><br>{{ form.name }} {{ form.name.errors }}</p>
+      {% if form.join_code %}
+      <p><label for="{{ form.join_code.id_for_label }}">{{ form.join_code.label }}</label><br>{{ form.join_code }} {{ form.join_code.errors }}
+        <br><span class="muted">Communiqué par votre enseignant.</span></p>
+      {% endif %}
+      <p class="muted">Au départ : 80 000 € d'apport, un vétérinaire fondateur et une ASV, les tarifs de référence et aucun stock.</p>
+      <button>Installer ma clinique ici</button>
+    </aside>
+  </div>
+</form>
+<p class="muted">Vert = densité d'animaux ; rouge = cliniques déjà installées.</p>
+
+<script>
+  (function () {
+    const fmt = new Intl.NumberFormat("fr-FR");
+    function show(input) {
+      const d = input.dataset;
+      document.getElementById("preview").hidden = false;
+      document.getElementById("preview-empty").hidden = true;
+      document.getElementById("p-cell").textContent = "(" + d.x + ", " + d.y + ")";
+      document.getElementById("p-animals").textContent = fmt.format(d.animals);
+      document.getElementById("p-catchment").textContent = fmt.format(d.catchment);
+      document.getElementById("p-competitors").textContent = d.competitors;
+      document.getElementById("p-nearest").textContent = d.nearest ? fmt.format(d.nearest) + " km" : "aucun";
+      document.getElementById("p-rent").textContent = fmt.format(d.rent) + " €";
+    }
+    document.querySelectorAll(".pick input").forEach(function (input) {
+      input.addEventListener("change", function () { show(input); });
+      if (input.checked) show(input);
+    });
+  })();
+</script>
+{% endblock %}

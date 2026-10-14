@@ -16,7 +16,7 @@
   <div class="cell clinic" title="{{ cell.clinic.name }}">{{ cell.clinic.pk }}</div>
   {% endif %}
   {% else %}
-  <div class="cell" style="background: rgba(39, 174, 96, {{ cell.density|floatformat:2 }});" title="({{ cell.x }},{{ cell.y }}) {{ cell.animals }} animaux"></div>
+  <div class="cell" style="background: rgba(39, 174, 96, {{ cell.density|floatformat:"2u" }});" title="({{ cell.x }},{{ cell.y }}) {{ cell.animals }} animaux"></div>
   {% endif %}
 {% endfor %}{% endfor %}
 </div>

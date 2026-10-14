@@ -5,7 +5,9 @@ from .models import GameServer, PopulationZone
 
 @admin.register(GameServer)
 class GameServerAdmin(admin.ModelAdmin):
-    list_display = ("name", "status", "current_quarter", "total_quarters", "next_resolution_at")
+    list_display = (
+        "name", "status", "current_quarter", "total_quarters", "registration_open", "max_clinics", "next_resolution_at"
+    )
     list_filter = ("status",)
 
 

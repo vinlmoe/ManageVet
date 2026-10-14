@@ -231,6 +231,30 @@ Clientèle plus sensible au prix & \code{beta\_price = 5} \\
 \end{tabular}
 \end{center}
 
+\section{Inscription et choix de l'emplacement}
+
+L'étudiant crée un compte, puis rejoint une partie en choisissant une case
+libre de la carte. Pour chaque case, l'écran affiche :
+
+\begin{itemize}
+  \item la patientèle potentielle dans un rayon de chalandise
+    $R = 6$~km : $P(x,y) = \sum_{d((x,y),z) \le R} N_z$ ;
+  \item la distance au concurrent le plus proche et le nombre de concurrents
+    dans le rayon ;
+  \item le loyer trimestriel, croissant avec la densité :
+    \[
+      L(x,y) = L_0 + \Delta L \,\frac{P(x,y)}{\max_{(x',y')} P(x',y')},
+      \qquad L_0 = 3\,000~\text{euros},\ \Delta L = 3\,000~\text{euros}.
+    \]
+\end{itemize}
+
+Ce loyer variable crée l'arbitrage pédagogique entre centre-ville (clientèle
+nombreuse, loyer élevé, concurrence) et campagne (loyer bas, clientèle
+dispersée). Chaque partie a un nombre maximal de cliniques, peut fermer les
+inscriptions et peut exiger un code d'accès communiqué par l'enseignant.
+L'installation est faite sous verrou du serveur de jeu, ce qui empêche deux
+étudiants de prendre simultanément la même case ou la dernière place.
+
 \section{Écran de décisions du joueur}
 
 Le joueur saisit ses décisions sur une page unique
@@ -266,8 +290,8 @@ nécessaire tant que le calcul d'un serveur reste de l'ordre de la seconde.
 \section{Pistes pour les versions suivantes}
 
 \begin{itemize}
-  \item Inscription des étudiants et création de leur clinique (choix de
-    l'emplacement sur la carte) sans passer par l'admin.
+  \item Rattachement des étudiants à une promotion et tableau de bord
+    enseignant.
   \item Redirection de la demande non servie vers les cliniques voisines.
   \item TVA, comptes de tiers, emprunts bancaires, bilan et clôture annuelle.
   \item Événements aléatoires (épidémie, départ d'un salarié) et tableau de

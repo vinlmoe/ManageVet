@@ -28,9 +28,13 @@ python manage.py runserver                        # http://127.0.0.1:8000/
 
 ## Côté joueur
 
-Chaque étudiant se connecte (`/accounts/login/`) et accède depuis la liste des
-parties à sa clinique et à son **écran de décisions**
-(`/clinics/<id>/decisions/`) :
+1. **Inscription** : l'étudiant crée son compte sur `/accounts/signup/`
+   (désactivable avec `DJANGO_SIGNUP_ENABLED=0`).
+2. **Installation** : depuis la liste des parties, « Rejoindre » ouvre la carte.
+   Pour chaque case libre, il voit la patientèle à moins de 6 km, la
+   concurrence proche et le loyer, qui dépend de la densité (3 000 à
+   6 000 € HT par trimestre). Il nomme sa clinique et l'installe.
+3. **Décisions** : sur l'écran de décisions (`/clinics/<id>/decisions/`) :
 
 - tarifs des prestations et activation de l'offre de soins ;
 - prix de vente et niveau de réassort des gammes de produits ;
@@ -42,7 +46,12 @@ parties à sa clinique et à son **écran de décisions**
 Une nouvelle saisie sur la même prestation ou la même gamme remplace la
 décision en attente. Un joueur ne voit que sa propre clinique (comptes et
 décisions) ; les comptes `is_staff` (équipe pédagogique) voient tout et ont
-accès à l'admin. Les comptes étudiants se créent via l'admin pour l'instant.
+accès à l'admin.
+
+L'enseignant règle dans l'admin, pour chaque partie : inscriptions ouvertes
+ou non, nombre maximal de cliniques et **code d'accès** à communiquer à la
+promotion (vide = partie ouverte à tous). Pour une démo :
+`python manage.py seed_demo --free-slots 3 --join-code VETO26`.
 
 ## Stress tests
 

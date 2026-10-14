@@ -10,6 +10,7 @@
     <td>{{ s.current_quarter }}/{{ s.total_quarters }}</td>
     <td>{% if mine %}<a href="{% url 'game:clinic_dashboard' mine.pk %}">{{ mine.name }}</a>
         {% if s.status == "running" %} — <a href="{% url 'decisions:board' mine.pk %}"><strong>Décisions</strong></a>{% endif %}
+        {% elif s.accepts_new_clinics %}<a class="button" href="{% url 'players:join' s.pk %}">Rejoindre</a>
         {% else %}<span class="muted">—</span>{% endif %}</td>
   </tr>
 {% empty %}

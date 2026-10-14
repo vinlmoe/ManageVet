@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "inventory",
     "accounting",
     "decisions",
+    "players",
 ]
 
 MIDDLEWARE = [
@@ -82,3 +83,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "game:server_list"
 LOGOUT_REDIRECT_URL = "login"
+
+# Inscription libre des étudiants (désactivable : DJANGO_SIGNUP_ENABLED=0).
+SIGNUP_ENABLED = os.environ.get("DJANGO_SIGNUP_ENABLED", "1") == "1"

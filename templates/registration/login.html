@@ -2,10 +2,14 @@
 {% block title %}Connexion{% endblock %}
 {% block content %}
 <h1>Connexion</h1>
-<form method="post">
+<form method="post" class="stacked">
   {% csrf_token %}
-  {{ form.as_p }}
+  {{ form.non_field_errors }}
+  {% for field in form %}
+  <p><label for="{{ field.id_for_label }}">{{ field.label }}</label> {{ field }} {{ field.errors }}</p>
+  {% endfor %}
   <input type="hidden" name="next" value="{{ next }}">
   <button>Se connecter</button>
 </form>
+<p class="muted">Pas encore de compte ? <a href="{% url 'players:signup' %}">Créer un compte étudiant</a></p>
 {% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Créer un compte{% endblock %}
+{% block content %}
+<h1>Créer un compte étudiant</h1>
+<form method="post" class="stacked">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  {% for field in form %}
+  <p>
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<span class="muted help">{{ field.help_text|safe }}</span>{% endif %}
+    {{ field.errors }}
+  </p>
+  {% endfor %}
+  <button>Créer mon compte</button>
+</form>
+<p class="muted">Déjà inscrit ? <a href="{% url 'login' %}">Se connecter</a></p>
+{% endblock %}

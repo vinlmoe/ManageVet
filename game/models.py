@@ -32,6 +32,15 @@ class GameServer(models.Model):
         blank=True,
         help_text="Ex. {\"demand_multiplier\": 0.8} pour un stress test.",
     )
+    # Inscription des étudiants
+    registration_open = models.BooleanField("inscriptions ouvertes", default=True)
+    max_clinics = models.PositiveSmallIntegerField("nombre maximal de cliniques", default=10)
+    join_code = models.CharField(
+        "code d'accès",
+        max_length=32,
+        blank=True,
+        help_text="Communiqué aux étudiants de la promotion. Vide = partie ouverte à tous.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -53,6 +62,13 @@ class GameServer(models.Model):
         self.status = self.Status.RUNNING
         self.next_resolution_at = timezone.now() + timedelta(days=self.resolution_interval_days)
         self.save(update_fields=["status", "next_resolution_at"])
+
+    def accepts_new_clinics(self) -> bool:
+        return (
+            self.registration_open
+            and self.status != self.Status.FINISHED
+            and self.clinics.count() < self.max_clinics
+        )
 
     def get_parameters(self):
         from engine.parameters import SimulationParameters

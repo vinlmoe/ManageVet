@@ -37,12 +37,14 @@ class Command(BaseCommand):
         parser.add_argument("--clinics", type=int, default=10)
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--quarters", type=int, default=4)
+        parser.add_argument("--free-slots", type=int, default=2, help="Places laissées libres pour des étudiants.")
+        parser.add_argument("--join-code", default="", help="Code d'accès à communiquer aux étudiants.")
         parser.add_argument(
             "--param", action="append", default=[], help="Surcharge de paramètre, ex. demand_multiplier=0.8"
         )
 
     @transaction.atomic
-    def handle(self, *args, name, clinics, seed, quarters, param, **options):
+    def handle(self, *args, name, clinics, seed, quarters, param, free_slots, join_code, **options):
         overrides = {}
         for item in param:
             key, _, value = item.partition("=")
@@ -52,7 +54,14 @@ class Command(BaseCommand):
                 raise CommandError(f"Paramètre invalide : {item}")
 
         seed_catalog()
-        server = GameServer.objects.create(name=name, seed=seed, total_quarters=quarters, parameters=overrides)
+        server = GameServer.objects.create(
+            name=name,
+            seed=seed,
+            total_quarters=quarters,
+            parameters=overrides,
+            max_clinics=clinics + free_slots,
+            join_code=join_code,
+        )
         generate_zones(server)
         rng = random.Random(seed)
         cells = rng.sample([(x, y) for x in range(server.grid_width) for y in range(server.grid_height)], clinics)
