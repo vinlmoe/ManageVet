@@ -27,19 +27,25 @@ CHV_EQUIPMENT = [
     ("lab-biochimie", "lease"),
     ("lab-hemato", "lease"),
     ("lab-ionogramme", "lease"),
+    ("bloc-orthopedie", "lease"),
+    ("endoscope", "lease"),
 ]
+
+CHV_SPECIALISTS = ["chirurgie", "chirurgie", "medecine_interne", "medecine_interne", "imagerie", "imagerie"]
 
 STRATEGIES = [
-    # nom, format, multiplicateur de prix, matériel, véto généralistes en plus, spécialistes,
+    # nom, format, multiplicateur de prix, matériel, véto généralistes en plus (échelon), spécialistes,
     # ASV en plus, réassort (en % de la demande estimée), emprunt (montant, trimestres) ou None
-    ("Low-cost", "low_cost", 0.80, [], 1, [], 0, 0.8, None),
-    ("Premium équipée", "standard", 1.25, [("lab-biochimie", "purchase"), ("radio-numerique", "lease")], 1, [], 1, 1.2, None),
-    ("Équilibrée", "standard", 1.00, [("lab-biochimie", "lease")], 1, [], 1, 1.0, None),
-    ("Prudente", "standard", 1.05, [], 0, [], 0, 0.6, None),
-    ("CHV", "chv", 1.15, CHV_EQUIPMENT, 5, ["chirurgie", "medecine_interne"], 6, 1.0, (200000, 28)),
+    ("Low-cost", "low_cost", 0.80, [], (1, 2), [], 0, 0.8, None),
+    ("Premium équipée", "standard", 1.25, [("lab-biochimie", "purchase"), ("radio-numerique", "lease")], (1, 4), [], 1, 1.2, None),
+    ("Équilibrée", "standard", 1.00, [("lab-biochimie", "lease")], (1, 3), [], 1, 1.0, None),
+    ("Prudente", "standard", 1.05, [], (0, 3), [], 0, 0.6, None),
+    ("CHV", "chv", 1.15, CHV_EQUIPMENT, (7, 3), CHV_SPECIALISTS, 7, 1.0, (200000, 28)),
+    ("Référé chirurgie", "standard", 1.10, [("radio-numerique", "lease"), ("bloc-orthopedie", "lease")], (1, 3), ["chirurgie"], 1, 1.0, None),
 ]
 
-VET_SALARY = Decimal("3800")  # échelon 3, minimum 2026 : 3 268,72 €
+# Salaires des généralistes par échelon (minimums 2026 : 2 729,92 / 3 268,72 / 3 771,60 €).
+VET_SALARIES = {2: Decimal("2800"), 3: Decimal("3800"), 4: Decimal("4300")}
 SPECIALIST_SALARY = Decimal("6500")  # échelon 5 (minimum 4 310,40 €), au prix du marché
 ASV_SALARY = Decimal("2200")  # échelon 5, minimum 2026 : 2 155,20 €
 
@@ -83,7 +89,7 @@ class Command(BaseCommand):
         User = get_user_model()
 
         for i, (x, y) in enumerate(cells, start=1):
-            strategy, clinic_format, price_mult, equipment, extra_vets, specialists, extra_asv, stock_factor, loan = (
+            strategy, clinic_format, price_mult, equipment, (extra_vets, vet_level), specialists, extra_asv, stock_factor, loan = (
                 STRATEGIES[(i - 1) % len(STRATEGIES)]
             )
             owner, _ = User.objects.get_or_create(username=f"bot{server.pk}_{i}")
@@ -94,7 +100,7 @@ class Command(BaseCommand):
             for code, mode in equipment:
                 acquire_equipment(clinic, code, mode)
             for _ in range(extra_vets):
-                hire(clinic, "vet", "Vétérinaire salarié", VET_SALARY)
+                hire(clinic, "vet", "Vétérinaire salarié", VET_SALARIES[vet_level], level=vet_level)
             for specialty in specialists:
                 hire(clinic, "vet", "Vétérinaire spécialiste", SPECIALIST_SALARY, level=5, specialty=specialty)
             for _ in range(extra_asv):

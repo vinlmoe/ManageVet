@@ -9,10 +9,14 @@ Règles de jeu (paramétrables dans ``SimulationParameters``) :
   catégories d'établissements de soins vétérinaires et du cahier des charges
   « CHV pour animaux de compagnie » de l'Ordre (24/03/2016) :
 
-  * au moins 6 vétérinaires et 6 personnes qualifiées à temps plein ;
+  * au moins 6 vétérinaires et 6 personnes qualifiées (ASV titrées,
+    échelon 5) à temps plein ;
   * un vétérinaire et une personne qualifiée présents 24 h/24, 7 j/7 ;
-  * des vétérinaires spécialistes (art. R. 242-34 CRPM) dans des disciplines
-    distinctes parmi médecine interne, chirurgie et imagerie ;
+  * au moins 6 vétérinaires spécialistes (art. R. 242-34 CRPM), tous à
+    l'échelon 5 (cadre spécialisé), dans au moins 2 disciplines parmi
+    médecine interne, chirurgie et imagerie. Leur activité est restreinte
+    aux actes de leur spécialité, mais ils reçoivent les cas référés que les
+    autres cliniques ne peuvent pas prendre en charge ;
   * au moins trois techniques d'imagerie (radiographie, échographie,
     scanner, IRM) ;
   * un laboratoire : biochimie, hématologie, ionogrammes.
@@ -25,11 +29,12 @@ Règles de jeu (paramétrables dans ``SimulationParameters``) :
 
 ATTENTION : les seuils viennent de sources secondaires (le texte officiel
 n'ayant pas pu être consulté) ; les sources divergent notamment sur le
-nombre de spécialistes exigés (un ou deux). Ils sont tous paramétrables.
+nombre de spécialistes exigés. Ils sont tous paramétrables.
 """
 
 from dataclasses import dataclass, field
 
+from . import ccn
 from .models import Clinic, EquipmentType, Specialty, StaffMember
 
 Format = Clinic.Format
@@ -42,8 +47,9 @@ DESCRIPTIONS = {
     Format.STANDARD: "Offre complète selon votre matériel et vos spécialistes, sans contrainte particulière.",
     Format.LOW_COST: "Actes de base uniquement (consultation, vaccination, stérilisation, détartrage). "
     "Protocoles standardisés : temps par acte réduit, consommables moins chers.",
-    Format.CHV: "Urgences et hospitalisation 24 h/24. Plus attractif, mais exige une équipe nombreuse avec des "
-    "spécialistes, un plateau technique complet et une permanence jour et nuit coûteuse.",
+    Format.CHV: "Urgences et hospitalisation 24 h/24, cas référés pris en charge par au moins 6 spécialistes "
+    "(échelon 5, activité limitée à leur discipline). Plus attractif, mais exige un plateau technique complet "
+    "et une permanence jour et nuit coûteuse.",
 }
 
 
@@ -81,7 +87,8 @@ def unavailability_reason(clinic_format: str, service_type, caps: Capabilities) 
 def chv_requirements(vets: int, asvs: int, specialties: list[str], owned_codes: set, params) -> list[tuple[str, bool]]:
     """Liste (libellé, condition remplie) des exigences du CHV.
 
-    ``specialties`` : une entrée par vétérinaire spécialiste (doublons possibles).
+    ``asvs`` : personnes qualifiées, c'est-à-dire ASV titrées (échelon 5).
+    ``specialties`` : une entrée par vétérinaire spécialiste à l'échelon 5 (doublons possibles).
     """
     names = dict(
         EquipmentType.objects.filter(code__in=CHV_IMAGING_EQUIPMENT + CHV_LAB_EQUIPMENT).values_list("code", "name")
@@ -92,9 +99,9 @@ def chv_requirements(vets: int, asvs: int, specialties: list[str], owned_codes: 
     disciplines = sorted({Specialty(s).label.lower() for s in specialties})
     rows = [
         (f"Au moins {min_vets} vétérinaires à temps plein (actuellement {vets})", vets >= min_vets),
-        (f"Au moins {min_asv} personnes qualifiées (ASV) à temps plein (actuellement {asvs})", asvs >= min_asv),
+        (f"Au moins {min_asv} ASV titrées (échelon 5) à temps plein (actuellement {asvs})", asvs >= min_asv),
         (
-            f"Au moins {min_spe} vétérinaires spécialistes dans {min_disc} disciplines "
+            f"Au moins {min_spe} vétérinaires spécialistes (échelon 5) dans {min_disc} disciplines "
             f"(actuellement {len(specialties)} : {', '.join(disciplines) or 'aucun'})",
             len(specialties) >= min_spe and len(disciplines) >= min_disc,
         ),
@@ -125,8 +132,8 @@ def current_chv_requirements(clinic, quarter: int, params, durable: bool = False
     vets = staff.filter(role=StaffMember.Role.VET)
     return chv_requirements(
         vets.count(),
-        staff.filter(role=StaffMember.Role.ASV).count(),
-        list(vets.exclude(specialty="").values_list("specialty", flat=True)),
+        staff.filter(role=StaffMember.Role.ASV, level=ccn.QUALIFIED_ASV_LEVEL).count(),
+        list(vets.exclude(specialty="").filter(level=ccn.SPECIALIST_LEVEL).values_list("specialty", flat=True)),
         owned,
         params,
     )

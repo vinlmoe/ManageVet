@@ -46,14 +46,17 @@ python manage.py runserver                        # http://127.0.0.1:8000/
 - recrutements et départs selon la **convention collective** des
   établissements de soins vétérinaires (échelon, salaire ≥ coefficient ×
   valeur du point, 17,96 € en 2026), y compris des **vétérinaires
-  spécialistes** (médecine interne, chirurgie, imagerie) qui débloquent des
-  actes référés ;
+  spécialistes** (médecine interne, chirurgie, imagerie). L'échelon compte :
+  productivité (débutant ×0,80 … cadre spécialisé ×1,15), qualité perçue des
+  soins (réputation) et qualification (seules les ASV titrées comptent pour
+  le CHV). Un spécialiste ne réalise que les actes de sa discipline mais
+  reçoit les cas référés de toute la région ;
 - achat ou leasing de matériel, résiliation d'un leasing ;
 - **positionnement** : clinique standard, **low-cost** (actes de base,
   standardisés, moins chers à produire) ou **CHV**. Pour le CHV, conditions
   inspirées de l'arrêté du 13 mars 2015 et du cahier des charges de l'Ordre :
-  6 vétérinaires dont 2 spécialistes dans 2 disciplines, 6 personnes
-  qualifiées, présence 24 h/24, 3 techniques d'imagerie, laboratoire. Coût
+  au moins 6 spécialistes (échelon 5) dans 2 disciplines, 6 ASV titrées,
+  présence 24 h/24, 3 techniques d'imagerie, laboratoire. Coût
   de la permanence selon la convention collective (majorations de nuit,
   dimanche et jours fériés, personnel mobilisé la nuit) ;
 - **emprunts bancaires** : taux selon l'endettement et les résultats,
@@ -81,7 +84,8 @@ python manage.py seed_demo --name "Choc de demande" --param demand_multiplier=0.
 python manage.py seed_demo --name "Inflation fournisseurs" --param purchase_cost_multiplier=1.25
 python manage.py seed_demo --name "Charges sociales +" --param employer_contribution_rate=0.50
 python manage.py seed_demo --name "Taux à 7 %" --param loan_base_rate_annual=0.07
-python manage.py seed_demo --name "Un seul spécialiste exigé" --param chv_min_specialists=1 --param chv_min_specialties=1
+python manage.py seed_demo --name "Deux spécialistes exigés" --param chv_min_specialists=2
+python manage.py seed_demo --name "Débutants très productifs" --param vet_productivity_level2=0.95
 python manage.py seed_demo --name "Revalorisation du point" --param ccn_point_value=18.50
 ```
 

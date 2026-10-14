@@ -151,11 +151,18 @@ def planned_chv_requirements(clinic, quarter: int, params) -> list[tuple[str, bo
     leaving = {d.payload.get("staff_id") for d in decisions if d.kind == Kind.DISMISS}
     staying = clinic.staff.filter(left_quarter__isnull=True).exclude(pk__in=leaving)
     hires = [d.payload for d in decisions if d.kind == Kind.HIRE]
-    hired_roles = [h.get("role") for h in hires]
-    vets = staying.filter(role=StaffMember.Role.VET).count() + hired_roles.count(StaffMember.Role.VET)
-    asvs = staying.filter(role=StaffMember.Role.ASV).count() + hired_roles.count(StaffMember.Role.ASV)
-    specialties = list(staying.exclude(specialty="").values_list("specialty", flat=True))
-    specialties += [h["specialty"] for h in hires if h.get("specialty")]
+
+    def hired_level(h):
+        return int(h.get("level") or ccn.DEFAULT_LEVEL.get(h.get("role"), 0))
+
+    vets = staying.filter(role=StaffMember.Role.VET).count() + sum(1 for h in hires if h.get("role") == "vet")
+    asvs = staying.filter(role=StaffMember.Role.ASV, level=ccn.QUALIFIED_ASV_LEVEL).count() + sum(
+        1 for h in hires if h.get("role") == "asv" and hired_level(h) == ccn.QUALIFIED_ASV_LEVEL
+    )
+    specialties = list(
+        staying.exclude(specialty="").filter(level=ccn.SPECIALIST_LEVEL).values_list("specialty", flat=True)
+    )
+    specialties += [h["specialty"] for h in hires if h.get("specialty") and hired_level(h) == ccn.SPECIALIST_LEVEL]
 
     released = {d.payload.get("clinic_equipment_id") for d in decisions if d.kind == Kind.RELEASE_EQUIPMENT}
     owned = set(

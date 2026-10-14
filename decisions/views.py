@@ -110,7 +110,13 @@ def decision_board(request, pk):
             for level in levels
         },
         "staff": [
-            (m, m.pk in pending_dismiss) for m in clinic.staff.filter(left_quarter__isnull=True).order_by("role", "id")
+            (m, m.pk in pending_dismiss, ccn.productivity(m.role, m.level, params))
+            for m in clinic.staff.filter(left_quarter__isnull=True).order_by("role", "specialty", "id")
+        ],
+        "productivities": [
+            (role_label, ccn.level_label(role, level), ccn.productivity(role, level, params))
+            for role, role_label in (("vet", "Vétérinaire"), ("asv", "Auxiliaire"))
+            for level in ccn.LEVELS[role]
         ],
         "owned_equipment": [(e, e.pk in pending_release) for e in owned],
         "catalog": [

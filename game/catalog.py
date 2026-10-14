@@ -17,6 +17,8 @@ EQUIPMENT = [
     ("echographe", "Échographe", D("30000"), D("2100"), 20),
     ("lab-ionogramme", "Analyseur d'ionogrammes", D("8000"), D("600"), 20),
     ("scanner", "Scanner (tomodensitométrie)", D("180000"), D("11000"), 28),
+    ("bloc-orthopedie", "Bloc de chirurgie spécialisée (instrumentation orthopédique, amplificateur de brillance)", D("90000"), D("5500"), 28),
+    ("endoscope", "Colonne d'endoscopie", D("45000"), D("2800"), 20),
 ]
 
 # Immobilisations hors catalogue : code, nom, coût, compte, durée (trimestres)
@@ -47,12 +49,17 @@ SERVICES = [
 # Actes d'équipement lourd sur lesquels les confrères réfèrent leurs patients.
 REFERRAL_EQUIPMENT_SERVICES = {"scanner"}
 
-# Actes de spécialistes (accessibles à toute clinique qui emploie le spécialiste, sauf low-cost).
-# code, nom, prix réf., fréquence, min véto, min ASV, consommables, spécialité requise
+# Actes de spécialistes : cas référés que les autres cliniques ne peuvent pas prendre en charge.
+# Accessibles à toute clinique qui emploie le spécialiste (sauf low-cost) ; un spécialiste
+# ne réalise que les actes de sa discipline.
+# code, nom, prix réf., fréquence, min véto, min ASV, consommables, spécialité, matériel requis
 SPECIALIST_SERVICES = [
-    ("consultation-medecine-interne", "Consultation spécialisée de médecine interne", D("110"), 0.008, 45, 10, D("5"), "medecine_interne"),
-    ("chirurgie-specialisee", "Chirurgie spécialisée (orthopédie, tissus mous)", D("1200"), 0.003, 120, 120, D("150"), "chirurgie"),
-    ("imagerie-specialisee", "Interprétation d'imagerie par un spécialiste", D("120"), 0.006, 30, 5, D("0"), "imagerie"),
+    ("consultation-medecine-interne", "Consultation référée de médecine interne", D("110"), 0.016, 45, 10, D("5"), "medecine_interne", None),
+    ("bilan-medecine-interne", "Bilan de médecine interne (endoscopie, explorations)", D("380"), 0.011, 75, 45, D("90"), "medecine_interne", "endoscope"),
+    ("consultation-chirurgicale", "Consultation chirurgicale et orthopédique référée", D("90"), 0.016, 30, 10, D("2"), "chirurgie", None),
+    ("chirurgie-specialisee", "Chirurgie spécialisée (orthopédie, tissus mous)", D("1200"), 0.0055, 120, 120, D("380"), "chirurgie", "bloc-orthopedie"),
+    ("imagerie-specialisee", "Interprétation d'imagerie en coupe (scanner)", D("150"), 0.016, 30, 5, D("0"), "imagerie", "scanner"),
+    ("echographie-specialisee", "Échographie spécialisée (abdominale, cardiaque)", D("180"), 0.016, 40, 10, D("5"), "imagerie", "echographe"),
 ]
 
 # Prestations réservées aux CHV (permanence 24 h/24).
@@ -93,7 +100,7 @@ def seed_catalog():
         )
     rows = (
         [(*row, "", "") for row in SERVICES]
-        + [(*row[:7], None, "", row[7]) for row in SPECIALIST_SERVICES]
+        + [(*row[:7], row[8], "", row[7]) for row in SPECIALIST_SERVICES]
         + [(*row, None, "chv", "") for row in CHV_SERVICES]
     )
     referral = {code for code, *_ in SPECIALIST_SERVICES + CHV_SERVICES} | REFERRAL_EQUIPMENT_SERVICES

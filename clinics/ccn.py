@@ -53,3 +53,21 @@ def hourly_rate(gross_monthly_salary) -> Decimal:
 
 def level_label(role: str, level: int) -> str:
     return LEVELS.get(role, {}).get(level, (f"Échelon {level}", 0))[0]
+
+
+# --- Effets de l'échelon dans le jeu (hypothèses, voir SimulationParameters) ---------
+
+QUALIFIED_ASV_LEVEL = 5  # seules les ASV titrées comptent comme « personnes qualifiées » du CHV
+
+
+def productivity(role: str, level: int, params) -> float:
+    """Coefficient appliqué aux heures facturables selon l'échelon (1,0 = référence)."""
+    return float(getattr(params, f"{role}_productivity_level{level}", 1.0))
+
+
+def experience_score(role: str, level: int) -> float:
+    """Expérience relative dans [-1, 1] : -1 au plus bas échelon proposé, +1 au plus haut."""
+    levels = sorted(LEVELS[role])
+    low, high = levels[0], levels[-1]
+    mid = (low + high) / 2
+    return max(-1.0, min(1.0, (level - mid) / ((high - low) / 2)))

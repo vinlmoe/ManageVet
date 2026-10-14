@@ -171,19 +171,25 @@ class DecisionBoardTests(TestCase):
         self.assertContains(response, "Positionnement de la clinique")
         self.assertContains(response, "Centre hospitalier vétérinaire (CHV)")
         self.assertContains(response, "✗ Au moins 6 vétérinaires à temps plein (actuellement 1)")
-        self.assertContains(response, "✗ Au moins 2 vétérinaires spécialistes")
+        self.assertContains(response, "✗ Au moins 6 vétérinaires spécialistes (échelon 5)")
+        self.assertContains(response, "✗ Au moins 6 ASV titrées (échelon 5) à temps plein (actuellement 1)")
         self.assertContains(response, "Financement")
         self.assertContains(response, "Capacité d'emprunt restante")
 
     def test_chv_checklist_reflects_pending_decisions(self):
-        for _ in range(3):
-            self.post(action="hire", role="vet", level="3", name="Véto", gross_monthly_salary="4000")
-        for specialty in ("chirurgie", "imagerie"):
+        for specialty in ("chirurgie", "chirurgie", "chirurgie", "imagerie", "imagerie", "imagerie"):
             self.post(action="hire", role="vet", level="5", specialty=specialty, name="Spé", gross_monthly_salary="6000")
+        self.post(action="hire", role="asv", level="3", name="AVQ", gross_monthly_salary="2000")  # ne compte pas
+        self.post(action="hire", role="asv", level="5", name="ASV", gross_monthly_salary="2200")
         self.post(action="acquire", equipment="echographe", mode="lease")
         response = self.client.get(self.url)
-        self.assertContains(response, "✓ Au moins 6 vétérinaires à temps plein (actuellement 6)")
-        self.assertContains(response, "✓ Au moins 2 vétérinaires spécialistes dans 2 disciplines (actuellement 2 : chirurgie, imagerie médicale)")
+        self.assertContains(response, "✓ Au moins 6 vétérinaires à temps plein (actuellement 7)")
+        self.assertContains(
+            response,
+            "✓ Au moins 6 vétérinaires spécialistes (échelon 5) dans 2 disciplines "
+            "(actuellement 6 : chirurgie, imagerie médicale)",
+        )
+        self.assertContains(response, "✗ Au moins 6 ASV titrées (échelon 5) à temps plein (actuellement 2)")
         self.assertContains(response, "✗ Au moins 3 techniques d&#x27;imagerie (actuellement 1 : Échographe)")
         self.assertContains(response, "✗ Analyseur de biochimie")
 

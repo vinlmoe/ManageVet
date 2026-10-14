@@ -20,7 +20,11 @@ from game.models import GameServer
 
 Kind = PendingDecision.Kind
 P = SimulationParameters()
-CHV_EQUIPMENT = ("radio-numerique", "echographe", "scanner", "lab-biochimie", "lab-hemato", "lab-ionogramme")
+CHV_EQUIPMENT = (
+    "radio-numerique", "echographe", "scanner", "lab-biochimie", "lab-hemato", "lab-ionogramme",
+    "bloc-orthopedie", "endoscope",
+)
+CHV_SPECIALISTS = ("chirurgie", "chirurgie", "medecine_interne", "medecine_interne", "imagerie", "imagerie")
 
 
 class BaseCase(TestCase):
@@ -46,11 +50,11 @@ class BaseCase(TestCase):
         return reports
 
     def make_chv_ready(self, clinic=None):
-        """Équipe et plateau technique minimaux d'un CHV (6 vétos dont 2 spécialistes, 6 ASV)."""
+        """Équipe et plateau technique d'un CHV : 6 spécialistes (échelon 5) en plus du fondateur, 6 ASV titrées."""
         clinic = clinic or self.clinic
-        for _ in range(3):
+        for _ in range(2):
             hire(clinic, "vet", "Véto", Decimal("4000"))
-        for specialty in ("chirurgie", "medecine_interne"):
+        for specialty in CHV_SPECIALISTS:
             hire(clinic, "vet", "Spécialiste", Decimal("6500"), level=5, specialty=specialty)
         for _ in range(5):
             hire(clinic, "asv", "ASV", Decimal("2200"))
@@ -182,7 +186,7 @@ class ChvTests(BaseCase):
         self.decide(Kind.SET_FORMAT, format="chv")
         for _ in range(3):
             self.decide(Kind.HIRE, role="vet", name="Véto", gross_monthly_salary="4000", level=3)
-        for specialty in ("chirurgie", "imagerie"):
+        for specialty in CHV_SPECIALISTS:
             self.decide(Kind.HIRE, role="vet", name="Spé", gross_monthly_salary="6000", level=5, specialty=specialty)
         for _ in range(5):
             self.decide(Kind.HIRE, role="asv", name="ASV", gross_monthly_salary="2200", level=5)
@@ -228,7 +232,7 @@ class ChvTests(BaseCase):
         self.make_chv_ready()
         self.decide(Kind.SET_FORMAT, format="chv")
         self.resolve()
-        vet = self.clinic.staff.filter(role="vet").first()
+        vet = self.clinic.staff.filter(role="vet").exclude(specialty="").first()  # un des 6 spécialistes
         self.decide(Kind.DISMISS, staff_id=vet.pk)
         self.resolve()  # le vétérinaire travaille encore ce trimestre
         self.assertEqual(self.clinic.format, Clinic.Format.CHV)

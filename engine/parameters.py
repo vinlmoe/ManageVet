@@ -48,6 +48,18 @@ class SimulationParameters:
     ccn_asv_night_majoration: float = 0.15  # nuit, dimanche, jour férié (personnel non vétérinaire)
     ccn_hours_per_fte_quarter: float = 401.75  # 1 607 h annuelles / 4
 
+    # --- Effet de l'échelon (hypothèses de jeu, la convention n'en dit rien) -----
+    # Productivité : heures facturables x coefficient selon l'expérience.
+    vet_productivity_level2: float = 0.80  # cadre débutant
+    vet_productivity_level3: float = 1.00  # cadre confirmé A
+    vet_productivity_level4: float = 1.10  # cadre confirmé B
+    vet_productivity_level5: float = 1.15  # cadre spécialisé
+    asv_productivity_level3: float = 0.90  # auxiliaire vétérinaire qualifié
+    asv_productivity_level4: float = 0.95  # auxiliaire vétérinaire confirmé
+    asv_productivity_level5: float = 1.00  # ASV titrée
+    # Qualité : une équipe expérimentée améliore la satisfaction, donc la réputation.
+    reputation_experience_weight: float = 0.15
+
     # --- Formats d'établissement ---------------------------------------------
     # Low-cost : actes standardisés (protocoles, peu de temps « hors acte »),
     # achats groupés de consommables, mais offre restreinte aux actes de base.
@@ -55,8 +67,8 @@ class SimulationParameters:
     lowcost_consumables_factor: float = 0.85
     # CHV (arrêté du 13 mars 2015 et cahier des charges de l'Ordre, à vérifier) :
     chv_min_vets: float = 6  # vétérinaires à temps plein
-    chv_min_asv: float = 6  # personnes qualifiées à temps plein
-    chv_min_specialists: float = 2  # vétérinaires spécialistes (R. 242-34 CRPM)
+    chv_min_asv: float = 6  # personnes qualifiées à temps plein (ASV titrées, échelon 5)
+    chv_min_specialists: float = 6  # vétérinaires spécialistes (R. 242-34 CRPM), échelon 5
     chv_min_specialties: float = 2  # disciplines distinctes parmi médecine interne, chirurgie, imagerie
     chv_min_imaging: float = 3  # techniques d'imagerie parmi radio, écho, scanner, IRM
     chv_utility_bonus: float = 0.6  # attractivité (urgences, référés, réputation)

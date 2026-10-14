@@ -127,22 +127,26 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
 {# ------------------------------------------------------------------ #}
 <section class="card">
   <h2>Personnel</h2>
-  <p class="muted">Capacité par trimestre : {{ params.vet_hours_per_quarter|floatformat:0 }} h facturables par vétérinaire,
-    {{ params.asv_hours_per_quarter|floatformat:0 }} h par ASV. Au-delà, la demande n'est pas servie.</p>
+  <p class="muted">Capacité par trimestre : {{ params.vet_hours_per_quarter|floatformat:0 }} h facturables par vétérinaire et
+    {{ params.asv_hours_per_quarter|floatformat:0 }} h par auxiliaire, multipliées par la productivité de l'échelon
+    (expérience). Au-delà, la demande n'est pas servie. Une équipe expérimentée améliore aussi la qualité perçue des soins,
+    donc la réputation. Un <strong>spécialiste</strong> ne réalise que les actes de sa discipline : il ne soulage pas les
+    consultations courantes, mais reçoit les cas référés de toute la région.</p>
   <div class="table-scroll"><table>
-    <tr><th>Salarié</th><th>Poste</th><th>Échelon (convention collective)</th><th>Brut mensuel</th><th>Depuis</th><th></th></tr>
-    {% for m, leaving in staff %}
+    <tr><th>Salarié</th><th>Poste</th><th>Échelon (convention collective)</th><th>Productivité</th><th>Brut mensuel</th><th>Depuis</th><th></th></tr>
+    {% for m, leaving, productivity in staff %}
     <tr>
       <td>{{ m.name }}</td>
       <td>{{ m.get_role_display }}{% if m.specialty %}<br><span class="tag">spécialiste {{ m.get_specialty_display|lower }}</span>{% endif %}</td>
       <td class="muted left">{{ m.level_label }}</td>
+      <td>×{{ productivity|floatformat:2 }}</td>
       <td>{{ m.gross_monthly_salary|floatformat:0 }} €</td><td>T{{ m.hired_quarter }}</td>
       <td>{% if leaving %}<span class="tag">départ programmé</span>
           {% elif can_edit %}<form method="post">{% csrf_token %}
             <input type="hidden" name="action" value="dismiss"><input type="hidden" name="object_id" value="{{ m.pk }}">
             <button class="danger">Se séparer</button></form>{% endif %}</td>
     </tr>
-    {% empty %}<tr><td colspan="6">Aucun salarié.</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="7">Aucun salarié.</td></tr>{% endfor %}
   </table></div>
   <p class="muted">Un départ coûte {{ params.severance_months|floatformat:1 }} mois de brut d'indemnité ; le salaire du trimestre en cours reste dû.</p>
   {% if can_edit %}
@@ -151,6 +155,12 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
     selon la convention collective des établissements de soins vétérinaires. Un vétérinaire spécialiste
     (diplôme de collège européen ou DESV, inscrit à l'Ordre) relève de l'échelon 5 ; sur le marché, sa rémunération
     dépasse souvent largement ce minimum.</p>
+  <details class="muted"><summary>Productivité par échelon (hypothèses de jeu)</summary>
+    <table>{% for role_label, level_label, productivity in productivities %}
+      <tr><td>{{ role_label }}</td><td class="left">{{ level_label }}</td><td>×{{ productivity|floatformat:2 }}</td></tr>{% endfor %}
+    </table>
+    <p>Seules les ASV titrées (échelon 5) comptent comme personnes qualifiées pour un CHV.</p>
+  </details>
   <form method="post" id="hire-form">
     {% csrf_token %}<input type="hidden" name="action" value="hire">
     {{ hire_form.non_field_errors }}

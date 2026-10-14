@@ -216,11 +216,15 @@ résumés par les sources citées en fin de document :
 
 \begin{itemize}
   \item au moins 6 vétérinaires et 6 personnes qualifiées à temps plein ;
+    seules les ASV titrées (échelon 5) comptent comme personnes qualifiées ;
   \item un vétérinaire et une personne qualifiée présents sur place
     24\,h/24, 7\,j/7, et ouverture au public en permanence ;
-  \item des vétérinaires spécialistes au sens de l'article R.\,242-34 du code
-    rural et de la pêche maritime ; le jeu exige 2 spécialistes dans
-    2 disciplines distinctes parmi médecine interne, chirurgie et imagerie ;
+  \item au moins 6 vétérinaires spécialistes au sens de l'article R.\,242-34
+    du code rural et de la pêche maritime, tous à l'échelon 5 (cadre
+    spécialisé), dans au moins 2 disciplines parmi médecine interne,
+    chirurgie et imagerie. Leur activité est restreinte aux actes de leur
+    discipline, mais ils reçoivent les cas référés que les autres cliniques
+    ne peuvent pas prendre en charge ;
   \item au moins trois techniques d'imagerie parmi radiographie,
     échographie, scanner et IRM ;
   \item un laboratoire : analyseurs de biochimie, d'hématologie et
@@ -238,11 +242,10 @@ rapport).
 $H_p = 1\,248$\,h par trimestre, à couvrir par un vétérinaire et une
 personne qualifiée. Avec $1\,607$\,h annuelles par ETP, cela mobilise
 $H_p / 401{,}75 \approx 3{,}1$ ETP par poste. L'activité de nuit étant
-faiblement facturable (productivité $\rho = 0{,}3$), la capacité de jour
-devient
-\[
-  n^{\text{eff}} = n - 3{,}1\,(1-\rho).
-\]
+faiblement facturable (productivité $\rho = 0{,}3$), les heures retirées,
+$3{,}1\,(1-\rho) \times 220$\,h par trimestre, sont prises d'abord sur la
+réserve des généralistes, puis, à défaut, sur celle des spécialistes
+(au prorata).
 Les heures de nuit (22\,h--7\,h), de dimanche et de jours fériés,
 $H_m \approx 1\,060$\,h par trimestre et par poste, sont majorées selon la
 convention collective :
@@ -283,9 +286,53 @@ Auxiliaire & 5 -- auxiliaire spécialisé vétérinaire & 120 & 2\,155,20 \\
 
 Un vétérinaire spécialiste relève obligatoirement de l'échelon 5 ; le
 joueur fixe librement un salaire au moins égal au minimum (le marché
-rémunère souvent les spécialistes bien au-delà). Les spécialistes
-débloquent des actes propres à leur discipline (consultation de médecine
-interne, chirurgie spécialisée, interprétation d'imagerie), interdits en
+rémunère souvent les spécialistes bien au-delà).
+
+\subsection{Effets de l'échelon}
+
+La convention fixe des minima de rémunération, pas des niveaux de
+productivité : les effets suivants sont des hypothèses de jeu,
+paramétrables.
+
+\begin{enumerate}
+  \item \textbf{Productivité.} Les heures facturables d'un salarié sont
+    multipliées par un coefficient $p_e$ selon son échelon :
+    \begin{center}
+    \begin{tabular}{@{}lcccc@{}}
+    \toprule
+    Vétérinaire, échelon & 2 & 3 & 4 & 5 \\
+    $p_e$ & 0,80 & 1,00 & 1,10 & 1,15 \\
+    \midrule
+    Auxiliaire, échelon & & 3 & 4 & 5 \\
+    $p_e$ & & 0,90 & 0,95 & 1,00 \\
+    \bottomrule
+    \end{tabular}
+    \end{center}
+    Un cadre débutant coûte 17\,\% de moins qu'un confirmé A au minimum
+    conventionnel, mais produit 20\,\% de moins.
+  \item \textbf{Qualité perçue.} L'expérience moyenne de l'équipe,
+    $\bar{x} \in [-1, 1]$ (chaque salarié est situé entre le plus bas et le
+    plus haut échelon de son poste), s'ajoute à la satisfaction :
+    \[
+      \text{satisfaction} = 0{,}7\,\kappa_c + 0{,}3\,\phi_c + 0{,}15\,\bar{x},
+    \]
+    bornée à $[0, 1]$, ce qui fait évoluer la réputation.
+  \item \textbf{Qualification.} Seules les ASV titrées (échelon 5) sont des
+    personnes qualifiées au sens des conditions du CHV.
+\end{enumerate}
+
+\subsection{Réserves de temps et spécialistes}
+
+Le temps vétérinaire est réparti en réserves : une réserve
+\emph{généraliste} (vétérinaires sans spécialité) et une réserve par
+spécialité. Chaque acte consomme le temps de sa réserve (les actes de
+spécialité ne peuvent être réalisés que par un spécialiste de la
+discipline, et un spécialiste ne réalise que ceux-là) et le temps ASV,
+commun à tous les actes. La part servie d'un acte est
+$\min(\kappa_{\text{réserve}}, \kappa_{\text{ASV}})$. Les actes de
+spécialité exigent aussi leur matériel : bloc de chirurgie spécialisée
+(instrumentation orthopédique, amplificateur de brillance), colonne
+d'endoscopie, scanner ou échographe pour l'imagerie. Ils sont interdits en
 low-cost. La valeur du point et les taux de majoration sont des paramètres
 de simulation (revalorisation, passage à la convention fusionnée IDCC 3256
 annoncée pour 2027).
@@ -301,12 +348,15 @@ sensibilité à la distance réduite ($\beta^{\text{réf}}_d = 0{,}08$ par km
 au lieu de $0{,}30$), sans effet du prix ni de l'offre généraliste. Ces
 actes n'entrent pas dans le panier de référence de $I_c$ et $O_c$.
 
-\paragraph{Calibrage.} Avec les valeurs par défaut, un CHV de
-8 vétérinaires (dont 2 spécialistes) et 7 ASV démarre à l'équilibre et
-atteint 10 à 13\,\% de marge nette en fin d'année, avec une masse salariale
-d'environ 60\,\% du chiffre d'affaires ; une équipe surdimensionnée est
-déficitaire, une équipe sous-dimensionnée sature sa capacité. Ces ordres
-de grandeur restent à confronter à des données réelles de la profession.
+\paragraph{Calibrage.} Avec les valeurs par défaut, le CHV de la démo
+(6 spécialistes, 8 généralistes, 8 ASV titrées, seul CHV du territoire)
+réalise environ 550\,000 à 660\,000 euros de chiffre d'affaires par
+trimestre ; sa marge nette passe de 6\,\% à 19\,\% au fil de l'année, à
+mesure que sa réputation progresse, pour une masse salariale de 58 à
+70\,\% du chiffre d'affaires. Une clinique standard employant un seul
+chirurgien spécialiste et bien placée atteint 31 à 35\,\% de marge : un
+chirurgien référent concentre des actes à forte valeur. Ces ordres de
+grandeur restent à confronter à des données réelles de la profession.
 
 \section{Emprunts bancaires}
 
@@ -441,6 +491,8 @@ nécessaire tant que le calcul d'un serveur reste de l'ordre de la seconde.
 \begin{itemize}
   \item Rattachement des étudiants à une promotion et tableau de bord
     enseignant.
+  \item Progression d'échelon à l'ancienneté (glissement
+    vieillesse-technicité), marché de l'emploi des spécialistes.
   \item Redirection de la demande non servie vers les cliniques voisines.
   \item TVA, comptes de tiers, emprunts bancaires, bilan et clôture annuelle.
   \item Événements aléatoires (épidémie, départ d'un salarié) et tableau de

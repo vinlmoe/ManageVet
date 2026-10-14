@@ -53,6 +53,7 @@ class ClinicOutcome:
     patients: dict = field(default_factory=lambda: {"dogs": 0.0, "cats": 0.0})
     acts: float = 0.0
     capacity_ratio: float = 1.0
+    general_ratio: float = 1.0
     stock_fill_rate: float = 1.0
     stock_value_start: Decimal = ZERO
     details: dict = field(default_factory=dict)
@@ -98,7 +99,7 @@ def resolve_quarter(server: GameServer) -> list[QuarterReport]:
         _post_depreciation(clinic, quarter)
         _post_stock_variation(clinic, quarter, out)
         _post_overdraft_interest(clinic, quarter, params)
-        _update_reputation(clinic, out, params)
+        _update_reputation(clinic, out, params, quarter)
         market_share = (out.patients["dogs"] + out.patients["cats"]) / total_patients
         reports.append(_build_report(clinic, quarter, out, market_share))
 
@@ -216,11 +217,55 @@ def _noise(rng: random.Random, params: SimulationParameters) -> float:
     return 1.0 + rng.uniform(-params.noise, params.noise)
 
 
+GENERAL_POOL = "general"
+
+
+def vet_pools(clinic, quarter, params) -> dict[str, float]:
+    """Heures vétérinaires facturables par réserve de temps.
+
+    - « general » : vétérinaires généralistes, qui réalisent tous les actes
+      sans spécialité (consultations, vaccinations, urgences, hospitalisation…) ;
+    - une réserve par spécialité : l'activité d'un spécialiste est restreinte
+      aux actes de sa discipline (cas référés).
+
+    Chaque vétérinaire apporte ``vet_hours_per_quarter`` x la productivité de
+    son échelon. Pour un CHV, la permanence 24 h/24 est prise d'abord sur les
+    généralistes, puis, à défaut, sur les spécialistes.
+    """
+    pools: dict[str, float] = {GENERAL_POOL: 0.0}
+    for member in active_staff(clinic, quarter).filter(role=StaffMember.Role.VET):
+        key = member.specialty or GENERAL_POOL
+        pools[key] = pools.get(key, 0.0) + ccn.productivity("vet", member.level, params) * params.vet_hours_per_quarter
+    if clinic.format == Clinic.Format.CHV:
+        lost = permanence_fte(params) * (1 - params.chv_night_productivity) * params.vet_hours_per_quarter
+        taken = min(lost, pools[GENERAL_POOL])
+        pools[GENERAL_POOL] -= taken
+        remaining = lost - taken
+        specialist_total = sum(h for k, h in pools.items() if k != GENERAL_POOL)
+        if remaining and specialist_total:
+            for key in pools:
+                if key != GENERAL_POOL:
+                    pools[key] = max(0.0, pools[key] - remaining * pools[key] / specialist_total)
+    return pools
+
+
+def asv_hours(clinic, quarter, params) -> float:
+    hours = sum(
+        ccn.productivity("asv", m.level, params) * params.asv_hours_per_quarter
+        for m in active_staff(clinic, quarter).filter(role=StaffMember.Role.ASV)
+    )
+    if clinic.format == Clinic.Format.CHV:
+        hours -= permanence_fte(params) * (1 - params.chv_night_productivity) * params.asv_hours_per_quarter
+    return max(hours, 0.0)
+
+
 def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng, referrals=None):
-    """Actes demandés par la patientèle, plafonnés par le temps disponible.
+    """Actes demandés, plafonnés par le temps disponible de chaque réserve.
 
     Les actes à recrutement régional (urgences, cas référés) sont calculés sur
-    le bassin régional de la clinique et non sur sa seule patientèle.
+    le bassin régional de la clinique et non sur sa seule patientèle. Un acte
+    est servi dans la limite de sa réserve vétérinaire (généralistes ou
+    spécialistes de la discipline) et du temps ASV commun.
     """
     animals = out.patients["dogs"] + out.patients["cats"]
     caps = clinic_capabilities(clinic, quarter)
@@ -229,8 +274,9 @@ def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng, referral
     time_factor = params.lowcost_time_factor if low_cost else 1.0
     consumables_factor = Decimal(str(params.lowcost_consumables_factor if low_cost else 1.0))
 
-    demanded = []  # (ClinicService, nombre d'actes demandés)
-    vet_minutes = asv_minutes = 0.0
+    demanded = []  # (ClinicService, réserve, nombre d'actes demandés)
+    vet_demand: dict[str, float] = {}
+    asv_minutes = 0.0
     for cs in clinic.services.select_related("service_type__required_equipment"):
         if not _is_operable(clinic, cs, caps):
             continue
@@ -242,43 +288,46 @@ def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng, referral
             * demand.price_volume_factor(float(cs.price), float(st.reference_price), params.service_price_elasticity)
             * _noise(rng, params)
         )
-        demanded.append((cs, volume))
-        vet_minutes += volume * st.vet_minutes * time_factor
+        pool = st.required_specialty or GENERAL_POOL
+        demanded.append((cs, pool, volume))
+        vet_demand[pool] = vet_demand.get(pool, 0.0) + volume * st.vet_minutes * time_factor / 60
         asv_minutes += volume * st.asv_minutes * time_factor
 
-    staff = active_staff(clinic, quarter)
-    vet_fte = staff.filter(role=StaffMember.Role.VET).count()
-    asv_fte = staff.filter(role=StaffMember.Role.ASV).count()
-    if clinic.format == Clinic.Format.CHV:
-        # La permanence 24 h/24 (un vétérinaire + une personne qualifiée sur place)
-        # mobilise des ETP dont l'activité nocturne est peu facturable.
-        lost = permanence_fte(params) * (1 - params.chv_night_productivity)
-        vet_fte, asv_fte = max(vet_fte - lost, 0), max(asv_fte - lost, 0)
-    vet_capacity = vet_fte * params.vet_hours_per_quarter * 60
-    asv_capacity = asv_fte * params.asv_hours_per_quarter * 60
-    ratios = [1.0]
-    if vet_minutes:
-        ratios.append(vet_capacity / vet_minutes)
-    if asv_minutes:
-        ratios.append(asv_capacity / asv_minutes)
-    out.capacity_ratio = min(ratios)
+    available = vet_pools(clinic, quarter, params)
+    asv_available = asv_hours(clinic, quarter, params)
+    asv_ratio = min(1.0, asv_available * 60 / asv_minutes) if asv_minutes else 1.0
+    pool_ratio = {
+        pool: min(1.0, available.get(pool, 0.0) / hours) if hours else 1.0 for pool, hours in vet_demand.items()
+    }
 
     revenue = consumables = ZERO
     services_detail = {}
-    for cs, volume in demanded:
-        acts = round(volume * out.capacity_ratio)
+    served_minutes = demanded_minutes = 0.0
+    for cs, pool, volume in demanded:
+        ratio = min(pool_ratio[pool], asv_ratio)
+        demanded_minutes += volume * cs.service_type.vet_minutes
+        served_minutes += volume * ratio * cs.service_type.vet_minutes
+        acts = round(volume * ratio)
         if not acts:
             continue
         out.acts += acts
         revenue += cs.price * acts
         consumables += cs.service_type.consumables_cost * consumables_factor * acts
         services_detail[cs.service_type.code] = {"acts": acts, "revenue": str(money(cs.price * acts))}
+    # Part de la demande servie (pondérée par le temps vétérinaire) : sert à la réputation.
+    out.capacity_ratio = served_minutes / demanded_minutes if demanded_minutes else 1.0
+    # Part de la patientèle propre effectivement reçue : sert aux ventes de produits.
+    out.general_ratio = min(pool_ratio.get(GENERAL_POOL, 1.0), asv_ratio)
     out.details["services"] = services_detail
     out.details["workload"] = {
-        "vet_hours_demanded": round(vet_minutes / 60, 1),
-        "vet_hours_available": round(vet_capacity / 60, 1),
+        "vet_hours_demanded": round(sum(vet_demand.values()), 1),
+        "vet_hours_available": round(sum(available.values()), 1),
         "asv_hours_demanded": round(asv_minutes / 60, 1),
-        "asv_hours_available": round(asv_capacity / 60, 1),
+        "asv_hours_available": round(asv_available, 1),
+        "pools": {
+            pool: {"demanded": round(vet_demand.get(pool, 0.0), 1), "available": round(available.get(pool, 0.0), 1)}
+            for pool in sorted(set(vet_demand) | set(available))
+        },
     }
     post_entry(clinic, quarter, "Prestations du trimestre", [(pcg.BANK, revenue, 0), (pcg.SERVICES_REVENUE, 0, revenue)])
     post_entry(clinic, quarter, "Consommables médicaux", [(pcg.CONSUMABLES, consumables, 0), (pcg.BANK, 0, consumables)])
@@ -286,7 +335,7 @@ def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng, referral
 
 def _sell_products(clinic, quarter, out: ClinicOutcome, params, rng):
     """Ventes au comptoir, proportionnelles aux animaux effectivement reçus."""
-    seen = {s: out.patients[s] * out.capacity_ratio for s in demand.SPECIES}
+    seen = {s: out.patients[s] * out.general_ratio for s in demand.SPECIES}
     revenue = ZERO
     demanded_total = sold_total = 0
     products_detail = {}
@@ -411,9 +460,18 @@ def _post_overdraft_interest(clinic, quarter, params):
     post_entry(clinic, quarter, "Agios sur découvert", [(pcg.BANK_INTEREST, interest, 0), (pcg.BANK, 0, interest)])
 
 
-def _update_reputation(clinic, out: ClinicOutcome, params):
-    """La réputation suit la satisfaction : patients servis et produits disponibles."""
+def experience_index(clinic, quarter) -> float:
+    """Expérience moyenne de l'équipe dans [-1, 1] (0 = échelon médian de chaque poste)."""
+    scores = [ccn.experience_score(m.role, m.level) for m in active_staff(clinic, quarter)]
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def _update_reputation(clinic, out: ClinicOutcome, params, quarter):
+    """La réputation suit la satisfaction : patients servis, produits disponibles,
+    expérience de l'équipe (qualité perçue des soins)."""
     satisfaction = 0.7 * min(out.capacity_ratio, 1.0) + 0.3 * out.stock_fill_rate
+    satisfaction += params.reputation_experience_weight * experience_index(clinic, quarter)
+    satisfaction = max(0.0, min(1.0, satisfaction))
     clinic.reputation = params.reputation_inertia * clinic.reputation + (1 - params.reputation_inertia) * satisfaction
     clinic.save(update_fields=["reputation"])
 
