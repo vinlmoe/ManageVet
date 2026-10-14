@@ -6,6 +6,18 @@ from django.db import models
 MONEY = {"max_digits": 12, "decimal_places": 2}
 
 
+class Specialty(models.TextChoices):
+    """Disciplines retenues par le cahier des charges CHV pour animaux de compagnie.
+
+    Un vétérinaire spécialiste est titulaire d'un diplôme reconnu (collège
+    européen, DESV…) et inscrit comme tel auprès de l'Ordre (art. R. 242-34 CRPM).
+    """
+
+    INTERNAL_MEDICINE = "medecine_interne", "Médecine interne"
+    SURGERY = "chirurgie", "Chirurgie"
+    IMAGING = "imagerie", "Imagerie médicale"
+
+
 # --- Catalogues de référence (communs à tous les serveurs) -------------------
 
 
@@ -49,6 +61,15 @@ class ServiceType(models.Model):
     )
     required_format = models.CharField(
         "réservée au format", max_length=10, blank=True, help_text="Ex. « chv » pour les urgences 24 h/24."
+    )
+    required_specialty = models.CharField(
+        "spécialiste requis", max_length=20, choices=Specialty.choices, blank=True
+    )
+    referral = models.BooleanField(
+        "recrutement régional",
+        default=False,
+        help_text="Urgences et cas référés : la demande vient de tout le territoire, "
+        "partagée entre les seules cliniques qui proposent l'acte.",
     )
 
     class Meta:
@@ -124,6 +145,8 @@ class StaffMember(models.Model):
     clinic = models.ForeignKey(Clinic, on_delete=models.CASCADE, related_name="staff")
     role = models.CharField(max_length=3, choices=Role.choices)
     name = models.CharField("nom", max_length=100)
+    level = models.PositiveSmallIntegerField("échelon (convention collective)", default=3)
+    specialty = models.CharField("spécialité", max_length=20, choices=Specialty.choices, blank=True)
     gross_monthly_salary = models.DecimalField("salaire brut mensuel", **MONEY)
     hired_quarter = models.PositiveSmallIntegerField()
     left_quarter = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -133,11 +156,19 @@ class StaffMember(models.Model):
         verbose_name_plural = "personnel"
 
     def __str__(self):
+        if self.specialty:
+            return f"{self.name} (spécialiste en {self.get_specialty_display().lower()})"
         return f"{self.name} ({self.get_role_display()})"
 
     @property
     def is_active(self) -> bool:
         return self.left_quarter is None
+
+    @property
+    def level_label(self) -> str:
+        from .ccn import level_label
+
+        return level_label(self.role, self.level)
 
 
 class ClinicEquipment(models.Model):

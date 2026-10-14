@@ -20,17 +20,28 @@ from game.catalog import seed_catalog
 from game.map import generate_zones
 from game.models import GameServer
 
-CHV_EQUIPMENT = [("radio-numerique", "purchase"), ("echographe", "purchase"), ("lab-biochimie", "lease"), ("lab-hemato", "lease")]
+CHV_EQUIPMENT = [
+    ("radio-numerique", "purchase"),
+    ("echographe", "purchase"),
+    ("scanner", "lease"),
+    ("lab-biochimie", "lease"),
+    ("lab-hemato", "lease"),
+    ("lab-ionogramme", "lease"),
+]
 
 STRATEGIES = [
-    # nom, format, multiplicateur de prix, matériel, véto en plus, ASV en plus,
-    # réassort (en % de la demande estimée), emprunt (montant, trimestres) ou None
-    ("Low-cost", "low_cost", 0.80, [], 1, 0, 0.8, None),
-    ("Premium équipée", "standard", 1.25, [("lab-biochimie", "purchase"), ("radio-numerique", "lease")], 1, 1, 1.2, None),
-    ("Équilibrée", "standard", 1.00, [("lab-biochimie", "lease")], 1, 1, 1.0, None),
-    ("Prudente", "standard", 1.05, [], 0, 0, 0.6, None),
-    ("CHV", "chv", 1.15, CHV_EQUIPMENT, 3, 3, 1.0, (150000, 28)),
+    # nom, format, multiplicateur de prix, matériel, véto généralistes en plus, spécialistes,
+    # ASV en plus, réassort (en % de la demande estimée), emprunt (montant, trimestres) ou None
+    ("Low-cost", "low_cost", 0.80, [], 1, [], 0, 0.8, None),
+    ("Premium équipée", "standard", 1.25, [("lab-biochimie", "purchase"), ("radio-numerique", "lease")], 1, [], 1, 1.2, None),
+    ("Équilibrée", "standard", 1.00, [("lab-biochimie", "lease")], 1, [], 1, 1.0, None),
+    ("Prudente", "standard", 1.05, [], 0, [], 0, 0.6, None),
+    ("CHV", "chv", 1.15, CHV_EQUIPMENT, 5, ["chirurgie", "medecine_interne"], 6, 1.0, (200000, 28)),
 ]
+
+VET_SALARY = Decimal("3800")  # échelon 3, minimum 2026 : 3 268,72 €
+SPECIALIST_SALARY = Decimal("6500")  # échelon 5 (minimum 4 310,40 €), au prix du marché
+ASV_SALARY = Decimal("2200")  # échelon 5, minimum 2026 : 2 155,20 €
 
 
 class Command(BaseCommand):
@@ -72,9 +83,9 @@ class Command(BaseCommand):
         User = get_user_model()
 
         for i, (x, y) in enumerate(cells, start=1):
-            strategy, clinic_format, price_mult, equipment, extra_vets, extra_asv, stock_factor, loan = STRATEGIES[
-                (i - 1) % len(STRATEGIES)
-            ]
+            strategy, clinic_format, price_mult, equipment, extra_vets, specialists, extra_asv, stock_factor, loan = (
+                STRATEGIES[(i - 1) % len(STRATEGIES)]
+            )
             owner, _ = User.objects.get_or_create(username=f"bot{server.pk}_{i}")
             clinic = create_clinic(server, owner, f"Clinique {i} ({strategy})", x, y)
             if loan:
@@ -83,9 +94,11 @@ class Command(BaseCommand):
             for code, mode in equipment:
                 acquire_equipment(clinic, code, mode)
             for _ in range(extra_vets):
-                hire(clinic, "vet", "Vétérinaire salarié", Decimal("3800"))
+                hire(clinic, "vet", "Vétérinaire salarié", VET_SALARY)
+            for specialty in specialists:
+                hire(clinic, "vet", "Vétérinaire spécialiste", SPECIALIST_SALARY, level=5, specialty=specialty)
             for _ in range(extra_asv):
-                hire(clinic, "asv", "ASV", Decimal("1900"))
+                hire(clinic, "asv", "ASV", ASV_SALARY)
             if clinic_format != "standard":
                 PendingDecision.objects.create(
                     clinic=clinic,

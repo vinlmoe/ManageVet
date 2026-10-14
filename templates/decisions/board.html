@@ -57,8 +57,11 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
         {% if value == "low_cost" %}
         <span class="muted">Temps par acte ×{{ params.lowcost_time_factor|floatformat:2 }}, consommables ×{{ params.lowcost_consumables_factor|floatformat:2 }}.</span>
         {% elif value == "chv" %}
-        <span class="muted">Surcoûts : {{ chv_extra_costs|floatformat:0 }} € / trimestre de permanence des soins
-          et {% widthratio params.chv_night_premium_rate 1 100 %} % de majorations sur les salaires.
+        <span class="muted">Permanence 24 h/24 : un vétérinaire et une personne qualifiée sur place jour et nuit.
+          Heures de nuit, dimanche et jours fériés majorées selon la convention collective
+          ({% widthratio params.ccn_vet_night_majoration 1 100 %} % vétérinaires, {% widthratio params.ccn_asv_night_majoration 1 100 %} % personnel non vétérinaire),
+          environ {{ permanence_fte|floatformat:1 }} ETP par poste mobilisés hors des heures d'ouverture,
+          {{ chv_extra_costs|floatformat:0 }} € / trimestre de fonctionnement 24 h/24.
           {% if chv_fitout_cost %}Travaux d'aménagement : {{ chv_fitout_cost|floatformat:0 }} € (immobilisés, amortis sur 10 ans).{% endif %}</span>
         <ul class="checklist">
           {% for requirement, ok in chv_requirements %}<li class="{% if ok %}pos{% else %}neg{% endif %}">{% if ok %}✓{% else %}✗{% endif %} {{ requirement }}</li>{% endfor %}
@@ -127,26 +130,76 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
   <p class="muted">Capacité par trimestre : {{ params.vet_hours_per_quarter|floatformat:0 }} h facturables par vétérinaire,
     {{ params.asv_hours_per_quarter|floatformat:0 }} h par ASV. Au-delà, la demande n'est pas servie.</p>
   <div class="table-scroll"><table>
-    <tr><th>Salarié</th><th>Poste</th><th>Brut mensuel</th><th>Depuis</th><th></th></tr>
+    <tr><th>Salarié</th><th>Poste</th><th>Échelon (convention collective)</th><th>Brut mensuel</th><th>Depuis</th><th></th></tr>
     {% for m, leaving in staff %}
     <tr>
-      <td>{{ m.name }}</td><td>{{ m.get_role_display }}</td><td>{{ m.gross_monthly_salary|floatformat:0 }} €</td><td>T{{ m.hired_quarter }}</td>
+      <td>{{ m.name }}</td>
+      <td>{{ m.get_role_display }}{% if m.specialty %}<br><span class="tag">spécialiste {{ m.get_specialty_display|lower }}</span>{% endif %}</td>
+      <td class="muted left">{{ m.level_label }}</td>
+      <td>{{ m.gross_monthly_salary|floatformat:0 }} €</td><td>T{{ m.hired_quarter }}</td>
       <td>{% if leaving %}<span class="tag">départ programmé</span>
           {% elif can_edit %}<form method="post">{% csrf_token %}
             <input type="hidden" name="action" value="dismiss"><input type="hidden" name="object_id" value="{{ m.pk }}">
             <button class="danger">Se séparer</button></form>{% endif %}</td>
     </tr>
-    {% empty %}<tr><td colspan="5">Aucun salarié.</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="6">Aucun salarié.</td></tr>{% endfor %}
   </table></div>
   <p class="muted">Un départ coûte {{ params.severance_months|floatformat:1 }} mois de brut d'indemnité ; le salaire du trimestre en cours reste dû.</p>
   {% if can_edit %}
   <h3>Recruter</h3>
-  <form method="post">
+  <p class="muted">Salaire minimum = coefficient de l'échelon × valeur du point ({{ params.ccn_point_value|floatformat:2 }} €)
+    selon la convention collective des établissements de soins vétérinaires. Un vétérinaire spécialiste
+    (diplôme de collège européen ou DESV, inscrit à l'Ordre) relève de l'échelon 5 ; sur le marché, sa rémunération
+    dépasse souvent largement ce minimum.</p>
+  <form method="post" id="hire-form">
     {% csrf_token %}<input type="hidden" name="action" value="hire">
     {{ hire_form.non_field_errors }}
     {% for field in hire_form %}<label>{{ field.label }} {{ field }}</label> {{ field.errors }} {% endfor %}
     <button>Programmer le recrutement</button>
+    <p class="muted" id="hire-minimum"></p>
   </form>
+  {{ salary_minimums|json_script:"salary-minimums" }}
+  <script>
+    (function () {
+      const form = document.getElementById("hire-form");
+      const minimums = JSON.parse(document.getElementById("salary-minimums").textContent);
+      const out = document.getElementById("hire-minimum");
+      const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
+      function refresh() {
+        const role = form.role.value;
+        // Échelons proposés selon le poste ; un spécialiste est forcément vétérinaire, échelon 5.
+        // Les échelons 3 à 5 existent pour les deux postes : on choisit l'option
+        // dans le groupe du poste, pas seulement par sa valeur.
+        let activeGroup = null;
+        form.querySelectorAll("#id_level optgroup").forEach(function (group) {
+          const isVet = group.label === "Vétérinaire";
+          group.disabled = (role === "vet") !== isVet;
+          if (!group.disabled) activeGroup = group;
+        });
+        form.specialty.disabled = role !== "vet";
+        if (role !== "vet") form.specialty.value = "";
+        const current = form.level.selectedOptions[0];
+        let wanted = form.specialty.value ? "5" : (current ? current.value : "");
+        if (!form.specialty.value && current && current.parentElement !== activeGroup) {
+          wanted = role === "vet" ? "3" : "5";
+        }
+        const option = activeGroup.querySelector('option[value="' + wanted + '"]') || activeGroup.querySelector("option");
+        option.selected = true;
+        const minimum = minimums[role + "-" + form.level.value];
+        out.textContent = minimum ? "Minimum conventionnel : " + eur.format(minimum) + " brut par mois." : "";
+        // Le salaire suit le minimum de l'échelon tant que le joueur n'a pas saisi son propre montant.
+        const salary = form.gross_monthly_salary;
+        if (minimum && (!salary.value || salary.value === lastSuggested || parseFloat(salary.value) < parseFloat(minimum))) {
+          salary.value = lastSuggested = String(Math.ceil(parseFloat(minimum)));
+        }
+      }
+      let lastSuggested = null;
+      form.addEventListener("change", function (event) {
+        if (event.target.name !== "gross_monthly_salary") refresh();
+      });
+      refresh();
+    })();
+  </script>
   {% endif %}
 </section>
 

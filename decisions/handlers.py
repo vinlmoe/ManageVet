@@ -8,7 +8,7 @@ from django.utils import timezone
 from accounting import loans
 from clinics import formats
 from clinics import services as clinic_services
-from clinics.services import OperationError, active_equipment
+from clinics.services import OperationError
 
 from .models import PendingDecision
 
@@ -37,8 +37,8 @@ def _set_service(clinic, payload, params):
     if "active" in payload:
         active = bool(payload["active"])
         if active:
-            owned = set(active_equipment(clinic, clinic.server.current_quarter).values_list("equipment_type_id", flat=True))
-            reason = formats.unavailability_reason(clinic.format, cs.service_type, owned)
+            caps = formats.clinic_capabilities(clinic, clinic.server.current_quarter)
+            reason = formats.unavailability_reason(clinic.format, cs.service_type, caps)
             if reason:
                 raise OperationError(f"{cs.service_type.name} : {reason}.")
         cs.active = active
@@ -64,7 +64,12 @@ def _set_product(clinic, payload, params):
 
 def _hire(clinic, payload, params):
     member = clinic_services.hire(
-        clinic, payload.get("role"), payload.get("name", "Nouveau salarié"), _decimal(payload, "gross_monthly_salary")
+        clinic,
+        payload.get("role"),
+        payload.get("name", "Nouveau salarié"),
+        _decimal(payload, "gross_monthly_salary"),
+        level=payload.get("level"),
+        specialty=payload.get("specialty", ""),
     )
     return f"Recrutement : {member}"
 

@@ -15,10 +15,11 @@ from django.shortcuts import redirect, render
 from accounting import loans
 from accounting.models import Loan
 from accounting.services import equity, outstanding_debt
-from clinics import formats
+from clinics import ccn, formats
 from clinics.access import get_clinic_for_user
 from clinics.models import Clinic, EquipmentType
 from clinics.services import active_equipment
+from engine.resolution import permanence_fte
 from game.models import GameServer
 
 from . import planning
@@ -29,10 +30,10 @@ Kind = PendingDecision.Kind
 
 
 def _services_form(clinic, quarter, data=None):
-    owned = set(active_equipment(clinic, quarter).values_list("equipment_type_id", flat=True))
+    caps = formats.clinic_capabilities(clinic, quarter)
     clinic_services = list(clinic.services.select_related("service_type__required_equipment").order_by("service_type__id"))
     for cs in clinic_services:
-        cs.unavailable = formats.unavailability_reason(clinic.format, cs.service_type, owned)
+        cs.unavailable = formats.unavailability_reason(clinic.format, cs.service_type, caps)
     return ServicesForm(
         data,
         clinic_services=clinic_services,
@@ -102,7 +103,12 @@ def decision_board(request, pk):
         "params": params,
         "services_form": forms.get("services") or _services_form(clinic, quarter),
         "products_form": forms.get("products") or _products_form(clinic, quarter),
-        "hire_form": forms.get("hire") or HireForm(),
+        "hire_form": forms.get("hire") or HireForm(point_value=params.ccn_point_value),
+        "salary_minimums": {
+            f"{role}-{level}": str(ccn.minimum_salary(role, level, params.ccn_point_value))
+            for role, levels in ccn.LEVELS.items()
+            for level in levels
+        },
         "staff": [
             (m, m.pk in pending_dismiss) for m in clinic.staff.filter(left_quarter__isnull=True).order_by("role", "id")
         ],
@@ -124,6 +130,7 @@ def decision_board(request, pk):
         "chv_requirements": planning.planned_chv_requirements(clinic, quarter, params),
         "chv_fitout_cost": None if formats.has_chv_fitout(clinic) or fitout is None else fitout.purchase_price,
         "chv_extra_costs": params.chv_extra_fixed_costs_per_quarter,
+        "permanence_fte": permanence_fte(params),
         # Financement
         "borrow_form": forms.get("borrow") or BorrowForm(),
         "loans": [
@@ -197,16 +204,19 @@ def _report(request, changed, noun):
 
 
 def _hire(request, clinic, quarter):
-    form = HireForm(request.POST)
+    form = HireForm(request.POST, point_value=clinic.server.get_parameters().ccn_point_value)
     if not form.is_valid():
         return form
     data = form.cleaned_data
-    PendingDecision.objects.create(
-        clinic=clinic,
-        quarter=quarter,
-        kind=Kind.HIRE,
-        payload={"role": data["role"], "name": data["name"], "gross_monthly_salary": str(data["gross_monthly_salary"])},
-    )
+    payload = {
+        "role": data["role"],
+        "level": data["level"],
+        "name": data["name"],
+        "gross_monthly_salary": str(data["gross_monthly_salary"]),
+    }
+    if data["specialty"]:
+        payload["specialty"] = data["specialty"]
+    PendingDecision.objects.create(clinic=clinic, quarter=quarter, kind=Kind.HIRE, payload=payload)
     messages.success(request, f"Recrutement de {data['name']} programmé.")
     return None
 

@@ -20,7 +20,7 @@ La part restante correspond aux animaux non médicalisés ce trimestre.
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .parameters import SimulationParameters
 
@@ -87,6 +87,26 @@ def allocate_patients(
             result[cid]["dogs"] += zone.dogs * share * p.demand_multiplier
             result[cid]["cats"] += zone.cats * share * p.demand_multiplier
     return result
+
+
+def allocate_referrals(
+    zones: list[Zone], clinics: list[ClinicOffer], p: SimulationParameters
+) -> dict[int, float]:
+    """Bassin régional d'un acte (urgences, cas référés) entre les cliniques qui le proposent.
+
+    Même logit, mais seules comptent la distance (avec une sensibilité réduite)
+    et la réputation : le prix et l'offre généraliste n'interviennent pas.
+    """
+    referral = replace(
+        p,
+        base_utility=p.referral_base_utility,
+        beta_distance=p.referral_beta_distance,
+        beta_price=0.0,
+        beta_offer=0.0,
+    )
+    neutral = [replace(c, price_index=1.0, offer_ratio=1.0, bonus=0.0) for c in clinics]
+    allocation = allocate_patients(zones, neutral, referral)
+    return {cid: a["dogs"] + a["cats"] for cid, a in allocation.items()}
 
 
 def price_volume_factor(price: float, reference_price: float, elasticity: float) -> float:

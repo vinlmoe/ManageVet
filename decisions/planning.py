@@ -9,8 +9,8 @@ from decimal import Decimal
 
 from django.db import transaction
 
-from clinics import formats
-from clinics.models import Clinic, EquipmentType, StaffMember
+from clinics import ccn, formats
+from clinics.models import Clinic, EquipmentType, Specialty, StaffMember
 
 from .models import PendingDecision
 
@@ -93,7 +93,10 @@ def describe(decision: PendingDecision, params) -> tuple[str, Decimal | None]:
         salary = Decimal(str(p.get("gross_monthly_salary", 0)))
         cost = salary * 3 * (1 + Decimal(str(params.employer_contribution_rate)))
         role = StaffMember.Role(p.get("role")).label if p.get("role") in StaffMember.Role.values else p.get("role")
-        return f"Recrutement : {p.get('name')} ({role}), {salary} € brut/mois", -cost.quantize(Decimal("1"))
+        if p.get("specialty") in Specialty.values:
+            role = f"spécialiste en {Specialty(p['specialty']).label.lower()}"
+        level = f", {ccn.level_label(p.get('role'), int(p['level']))}" if p.get("level") else ""
+        return f"Recrutement : {p.get('name')} ({role}{level}), {salary} € brut/mois", -cost.quantize(Decimal("1"))
     if k == Kind.DISMISS:
         member = StaffMember.objects.filter(pk=p.get("staff_id")).first()
         cost = member.gross_monthly_salary * Decimal(str(params.severance_months)) if member else Decimal("0")
@@ -147,9 +150,12 @@ def planned_chv_requirements(clinic, quarter: int, params) -> list[tuple[str, bo
     decisions = list(pending(clinic, quarter))
     leaving = {d.payload.get("staff_id") for d in decisions if d.kind == Kind.DISMISS}
     staying = clinic.staff.filter(left_quarter__isnull=True).exclude(pk__in=leaving)
-    hires = [d.payload.get("role") for d in decisions if d.kind == Kind.HIRE]
-    vets = staying.filter(role=StaffMember.Role.VET).count() + hires.count(StaffMember.Role.VET)
-    asvs = staying.filter(role=StaffMember.Role.ASV).count() + hires.count(StaffMember.Role.ASV)
+    hires = [d.payload for d in decisions if d.kind == Kind.HIRE]
+    hired_roles = [h.get("role") for h in hires]
+    vets = staying.filter(role=StaffMember.Role.VET).count() + hired_roles.count(StaffMember.Role.VET)
+    asvs = staying.filter(role=StaffMember.Role.ASV).count() + hired_roles.count(StaffMember.Role.ASV)
+    specialties = list(staying.exclude(specialty="").values_list("specialty", flat=True))
+    specialties += [h["specialty"] for h in hires if h.get("specialty")]
 
     released = {d.payload.get("clinic_equipment_id") for d in decisions if d.kind == Kind.RELEASE_EQUIPMENT}
     owned = set(
@@ -159,4 +165,4 @@ def planned_chv_requirements(clinic, quarter: int, params) -> list[tuple[str, bo
         .values_list("equipment_type__code", flat=True)
     )
     owned |= {d.payload.get("equipment") for d in decisions if d.kind == Kind.ACQUIRE_EQUIPMENT}
-    return formats.chv_requirements(vets, asvs, owned, params)
+    return formats.chv_requirements(vets, asvs, specialties, owned, params)

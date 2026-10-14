@@ -20,6 +20,7 @@ from game.models import GameServer
 
 Kind = PendingDecision.Kind
 P = SimulationParameters()
+CHV_EQUIPMENT = ("radio-numerique", "echographe", "scanner", "lab-biochimie", "lab-hemato", "lab-ionogramme")
 
 
 class BaseCase(TestCase):
@@ -45,11 +46,15 @@ class BaseCase(TestCase):
         return reports
 
     def make_chv_ready(self, clinic=None):
+        """Équipe et plateau technique minimaux d'un CHV (6 vétos dont 2 spécialistes, 6 ASV)."""
         clinic = clinic or self.clinic
         for _ in range(3):
             hire(clinic, "vet", "Véto", Decimal("4000"))
-            hire(clinic, "asv", "ASV", Decimal("1900"))
-        for code in ("radio-numerique", "echographe", "lab-biochimie", "lab-hemato"):
+        for specialty in ("chirurgie", "medecine_interne"):
+            hire(clinic, "vet", "Spécialiste", Decimal("6500"), level=5, specialty=specialty)
+        for _ in range(5):
+            hire(clinic, "asv", "ASV", Decimal("2200"))
+        for code in CHV_EQUIPMENT:
             acquire_equipment(clinic, code, "lease")
 
     def assert_books_consistent(self):
@@ -149,7 +154,7 @@ class LowCostTests(BaseCase):
             clinic = create_clinic(server, get_user_model().objects.create(username=clinic_format), "X", 3, 3)
             for _ in range(6):
                 hire(clinic, "vet", "Véto", Decimal("4000"))
-                hire(clinic, "asv", "ASV", Decimal("1900"))
+                hire(clinic, "asv", "ASV", Decimal("2200"))
             clinic.format = clinic_format
             clinic.save()
             server.start()
@@ -176,9 +181,12 @@ class ChvTests(BaseCase):
         # La décision de format est saisie EN PREMIER mais appliquée en dernier.
         self.decide(Kind.SET_FORMAT, format="chv")
         for _ in range(3):
-            self.decide(Kind.HIRE, role="vet", name="Véto", gross_monthly_salary="4000")
-            self.decide(Kind.HIRE, role="asv", name="ASV", gross_monthly_salary="1900")
-        for code in ("radio-numerique", "echographe", "lab-biochimie", "lab-hemato"):
+            self.decide(Kind.HIRE, role="vet", name="Véto", gross_monthly_salary="4000", level=3)
+        for specialty in ("chirurgie", "imagerie"):
+            self.decide(Kind.HIRE, role="vet", name="Spé", gross_monthly_salary="6000", level=5, specialty=specialty)
+        for _ in range(5):
+            self.decide(Kind.HIRE, role="asv", name="ASV", gross_monthly_salary="2200", level=5)
+        for code in CHV_EQUIPMENT:
             self.decide(Kind.ACQUIRE_EQUIPMENT, equipment=code, mode="lease")
         self.resolve()
         self.assertEqual(self.clinic.format, Clinic.Format.CHV)
@@ -194,8 +202,8 @@ class ChvTests(BaseCase):
         # Prestations exclusives actives et facturées.
         self.assertTrue(self.clinic.services.get(service_type__code="urgences").active)
         self.assertIn("urgences", report.details["services"])
-        # Surcoûts de permanence.
-        self.assertGreaterEqual(account_balance(self.clinic, pcg.OTHER_EXTERNAL), Decimal("21000"))
+        # Surcoûts de fonctionnement 24 h/24 (en plus des 6 000 € de charges diverses).
+        self.assertEqual(account_balance(self.clinic, pcg.OTHER_EXTERNAL), Decimal("14000"))
         self.assertEqual(report.clinic_format, "chv")
         self.assert_books_consistent()
 

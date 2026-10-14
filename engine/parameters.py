@@ -42,17 +42,37 @@ class SimulationParameters:
     # --- Réputation -----------------------------------------------------------
     reputation_inertia: float = 0.7
 
+    # --- Convention collective (voir clinics/ccn.py) ---------------------------
+    ccn_point_value: float = 17.96  # valeur du point 2026 (avenant n° 91)
+    ccn_vet_night_majoration: float = 0.20  # nuit, dimanche, jour férié (vétérinaires)
+    ccn_asv_night_majoration: float = 0.15  # nuit, dimanche, jour férié (personnel non vétérinaire)
+    ccn_hours_per_fte_quarter: float = 401.75  # 1 607 h annuelles / 4
+
     # --- Formats d'établissement ---------------------------------------------
     # Low-cost : actes standardisés (protocoles, peu de temps « hors acte »),
     # achats groupés de consommables, mais offre restreinte aux actes de base.
     lowcost_time_factor: float = 0.75
     lowcost_consumables_factor: float = 0.85
-    # CHV : règles de jeu simplifiées (effectif et plateau technique minimum).
-    chv_min_vets: float = 4
-    chv_min_asv: float = 4
-    chv_utility_bonus: float = 0.6  # attractivité (urgences, réputation, référés)
-    chv_extra_fixed_costs_per_quarter: float = 15000.0  # permanence 24 h/24, énergie, garde
-    chv_night_premium_rate: float = 0.15  # majorations nuit / dimanche / jours fériés
+    # CHV (arrêté du 13 mars 2015 et cahier des charges de l'Ordre, à vérifier) :
+    chv_min_vets: float = 6  # vétérinaires à temps plein
+    chv_min_asv: float = 6  # personnes qualifiées à temps plein
+    chv_min_specialists: float = 2  # vétérinaires spécialistes (R. 242-34 CRPM)
+    chv_min_specialties: float = 2  # disciplines distinctes parmi médecine interne, chirurgie, imagerie
+    chv_min_imaging: float = 3  # techniques d'imagerie parmi radio, écho, scanner, IRM
+    chv_utility_bonus: float = 0.6  # attractivité (urgences, référés, réputation)
+    # Permanence 24 h/24 : un vétérinaire et une personne qualifiée sur place.
+    # 96 h/semaine hors ouverture de jour (8 h-20 h du lundi au samedi) x 13 semaines.
+    chv_permanence_hours_per_quarter: float = 1248.0
+    # Heures majorées (22 h-7 h, dimanches et jours fériés) par trimestre et par poste.
+    chv_majored_hours_per_quarter: float = 1060.0
+    chv_night_productivity: float = 0.3  # activité facturable la nuit / activité de jour
+    chv_extra_fixed_costs_per_quarter: float = 8000.0  # énergie 24 h/24, maintenance, sécurité
+
+    # --- Urgences et cas référés (bassin régional) -------------------------------
+    # Pour ces actes, les propriétaires (ou leur vétérinaire traitant) acceptent
+    # d'aller plus loin : sensibilité à la distance plus faible.
+    referral_base_utility: float = 1.0
+    referral_beta_distance: float = 0.08  # par km
 
     # --- Emprunts bancaires -----------------------------------------------------
     loan_base_rate_annual: float = 0.045

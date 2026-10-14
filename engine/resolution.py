@@ -32,7 +32,8 @@ from accounting import pcg
 from accounting.loans import pay_installments
 from accounting.models import QuarterReport
 from accounting.services import equity, income_statement, money, outstanding_debt, post_entry
-from clinics.formats import enforce_chv_status, unavailability_reason
+from clinics import ccn
+from clinics.formats import clinic_capabilities, enforce_chv_status, unavailability_reason
 from clinics.models import Clinic, StaffMember
 from clinics.services import active_equipment, active_staff
 from decisions.handlers import apply_pending_decisions
@@ -83,13 +84,14 @@ def resolve_quarter(server: GameServer) -> list[QuarterReport]:
 
     patients = _allocate_market(server, clinics, params)
     total_patients = sum(p["dogs"] + p["cats"] for p in patients.values()) or 1.0
+    referrals = _allocate_referrals(server, clinics, params)
 
     reports = []
     for clinic in clinics:
         out = outcomes[clinic.id]
         out.patients = patients[clinic.id]
         rng = random.Random(f"{server.seed}-{quarter}-{clinic.x}-{clinic.y}")
-        _produce_services(clinic, quarter, out, params, rng)
+        _produce_services(clinic, quarter, out, params, rng, referrals)
         _sell_products(clinic, quarter, out, params, rng)
         _post_fixed_charges(clinic, quarter, params)
         pay_installments(clinic, quarter)
@@ -144,16 +146,19 @@ def _restock(clinic: Clinic, quarter: int, params: SimulationParameters):
 def _price_index_and_offer(clinic: Clinic, quarter: int) -> tuple[float, float]:
     """Indice de prix (pondéré par le panier de référence) et ratio d'offre.
 
-    Calculés sur l'offre généraliste : les actes réservés aux CHV n'entrent pas
-    dans le panier (leur effet passe par le bonus d'attractivité du format).
+    Calculés sur l'offre généraliste : les actes réservés aux CHV ou aux
+    spécialistes n'entrent pas dans le panier (leur effet passe par le bonus
+    d'attractivité du CHV et par le chiffre d'affaires qu'ils génèrent).
     """
-    available_equipment = set(active_equipment(clinic, quarter).values_list("equipment_type_id", flat=True))
+    caps = clinic_capabilities(clinic, quarter)
     weighted_price = weight_offered = weight_total = 0.0
-    for cs in clinic.services.select_related("service_type").filter(service_type__required_format=""):
+    for cs in clinic.services.select_related("service_type__required_equipment").filter(
+        service_type__required_format="", service_type__required_specialty=""
+    ):
         st = cs.service_type
         w = st.market_weight
         weight_total += w
-        if _is_operable(clinic, cs, available_equipment):
+        if _is_operable(clinic, cs, caps):
             weight_offered += w
             weighted_price += w * float(cs.price) / float(st.reference_price)
     price_index = weighted_price / weight_offered if weight_offered else 1.0
@@ -161,8 +166,8 @@ def _price_index_and_offer(clinic: Clinic, quarter: int) -> tuple[float, float]:
     return price_index, offer_ratio
 
 
-def _is_operable(clinic, cs, available_equipment: set) -> bool:
-    return cs.active and unavailability_reason(clinic.format, cs.service_type, available_equipment) is None
+def _is_operable(clinic, cs, caps) -> bool:
+    return cs.active and unavailability_reason(clinic.format, cs.service_type, caps) is None
 
 
 def _allocate_market(server: GameServer, clinics: list[Clinic], params: SimulationParameters):
@@ -183,14 +188,42 @@ def _allocate_market(server: GameServer, clinics: list[Clinic], params: Simulati
     return {c.id: allocation.get(c.id, {"dogs": 0.0, "cats": 0.0}) for c in clinics}
 
 
+def _allocate_referrals(server: GameServer, clinics: list[Clinic], params: SimulationParameters):
+    """Bassins régionaux des actes à recrutement régional (urgences, cas référés).
+
+    Renvoie {code de prestation: {id de clinique: animaux du bassin}}.
+    """
+    from clinics.models import ServiceType
+
+    quarter = server.current_quarter
+    zones = [demand.Zone(z.id, z.x, z.y, z.dogs, z.cats, z.price_sensitivity) for z in server.zones.all()]
+    caps = {c.id: clinic_capabilities(c, quarter) for c in clinics}
+    staffed = {c.id for c in clinics if active_staff(c, quarter).filter(role=StaffMember.Role.VET).exists()}
+    pools = {}
+    for st in ServiceType.objects.filter(referral=True).select_related("required_equipment"):
+        offering = [
+            demand.ClinicOffer(c.id, c.x, c.y, 1.0, 1.0, c.reputation)
+            for c in clinics
+            if c.id in staffed
+            and c.services.filter(service_type=st, active=True).exists()
+            and unavailability_reason(c.format, st, caps[c.id]) is None
+        ]
+        pools[st.code] = demand.allocate_referrals(zones, offering, params) if offering else {}
+    return pools
+
+
 def _noise(rng: random.Random, params: SimulationParameters) -> float:
     return 1.0 + rng.uniform(-params.noise, params.noise)
 
 
-def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng):
-    """Actes demandés par la patientèle, plafonnés par le temps disponible."""
+def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng, referrals=None):
+    """Actes demandés par la patientèle, plafonnés par le temps disponible.
+
+    Les actes à recrutement régional (urgences, cas référés) sont calculés sur
+    le bassin régional de la clinique et non sur sa seule patientèle.
+    """
     animals = out.patients["dogs"] + out.patients["cats"]
-    available_equipment = set(active_equipment(clinic, quarter).values_list("equipment_type_id", flat=True))
+    caps = clinic_capabilities(clinic, quarter)
 
     low_cost = clinic.format == Clinic.Format.LOW_COST
     time_factor = params.lowcost_time_factor if low_cost else 1.0
@@ -199,11 +232,12 @@ def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng):
     demanded = []  # (ClinicService, nombre d'actes demandés)
     vet_minutes = asv_minutes = 0.0
     for cs in clinic.services.select_related("service_type__required_equipment"):
-        if not _is_operable(clinic, cs, available_equipment):
+        if not _is_operable(clinic, cs, caps):
             continue
         st = cs.service_type
+        base = (referrals or {}).get(st.code, {}).get(clinic.id, 0.0) if st.referral else animals
         volume = (
-            animals
+            base
             * st.frequency_per_animal
             * demand.price_volume_factor(float(cs.price), float(st.reference_price), params.service_price_elasticity)
             * _noise(rng, params)
@@ -213,8 +247,15 @@ def _produce_services(clinic, quarter, out: ClinicOutcome, params, rng):
         asv_minutes += volume * st.asv_minutes * time_factor
 
     staff = active_staff(clinic, quarter)
-    vet_capacity = staff.filter(role=StaffMember.Role.VET).count() * params.vet_hours_per_quarter * 60
-    asv_capacity = staff.filter(role=StaffMember.Role.ASV).count() * params.asv_hours_per_quarter * 60
+    vet_fte = staff.filter(role=StaffMember.Role.VET).count()
+    asv_fte = staff.filter(role=StaffMember.Role.ASV).count()
+    if clinic.format == Clinic.Format.CHV:
+        # La permanence 24 h/24 (un vétérinaire + une personne qualifiée sur place)
+        # mobilise des ETP dont l'activité nocturne est peu facturable.
+        lost = permanence_fte(params) * (1 - params.chv_night_productivity)
+        vet_fte, asv_fte = max(vet_fte - lost, 0), max(asv_fte - lost, 0)
+    vet_capacity = vet_fte * params.vet_hours_per_quarter * 60
+    asv_capacity = asv_fte * params.asv_hours_per_quarter * 60
     ratios = [1.0]
     if vet_minutes:
         ratios.append(vet_capacity / vet_minutes)
@@ -280,11 +321,16 @@ def _post_fixed_charges(clinic, quarter, params):
     gross = sum((m.gross_monthly_salary * 3 for m in active_staff(clinic, quarter)), ZERO)
     post_entry(clinic, quarter, "Salaires du trimestre", [(pcg.SALARIES, gross, 0), (pcg.BANK, 0, gross)])
     if clinic.format == Clinic.Format.CHV:
-        premium = money(gross * Decimal(str(params.chv_night_premium_rate)))
-        post_entry(clinic, quarter, "Majorations nuit, dimanche et garde (CHV)", [(pcg.SALARIES, premium, 0), (pcg.BANK, 0, premium)])
+        premium = chv_majorations(clinic, quarter, params)
+        post_entry(
+            clinic,
+            quarter,
+            "Majorations conventionnelles nuit, dimanche et jours fériés (permanence CHV)",
+            [(pcg.SALARIES, premium, 0), (pcg.BANK, 0, premium)],
+        )
         gross += premium
         extra = Decimal(str(params.chv_extra_fixed_costs_per_quarter))
-        post_entry(clinic, quarter, "Permanence des soins 24 h/24 (CHV)", [(pcg.OTHER_EXTERNAL, extra, 0), (pcg.BANK, 0, extra)])
+        post_entry(clinic, quarter, "Fonctionnement 24 h/24 (CHV)", [(pcg.OTHER_EXTERNAL, extra, 0), (pcg.BANK, 0, extra)])
     social = money(gross * Decimal(str(params.employer_contribution_rate)))
     post_entry(clinic, quarter, "Charges sociales patronales", [(pcg.SOCIAL_CHARGES, social, 0), (pcg.BANK, 0, social)])
     post_entry(
@@ -300,6 +346,30 @@ def _post_fixed_charges(clinic, quarter, params):
     post_entry(clinic, quarter, "Autres charges externes", [(pcg.OTHER_EXTERNAL, other, 0), (pcg.BANK, 0, other)])
     leases = sum((e.lease_per_quarter for e in active_equipment(clinic, quarter).filter(mode="lease")), ZERO)
     post_entry(clinic, quarter, "Loyers de leasing", [(pcg.LEASING, leases, 0), (pcg.BANK, 0, leases)])
+
+
+def permanence_fte(params) -> float:
+    """ETP mobilisés par poste (vétérinaire, personne qualifiée) pour la permanence 24 h/24."""
+    return params.chv_permanence_hours_per_quarter / params.ccn_hours_per_fte_quarter
+
+
+def chv_majorations(clinic, quarter, params) -> Decimal:
+    """Majorations conventionnelles des heures de nuit, dimanche et jours fériés.
+
+    Un vétérinaire et une personne qualifiée sont présents sur ces heures ;
+    on applique le taux de majoration au salaire horaire moyen de chaque poste.
+    """
+    total = ZERO
+    hours = Decimal(str(params.chv_majored_hours_per_quarter))
+    for role, rate in (
+        (StaffMember.Role.VET, params.ccn_vet_night_majoration),
+        (StaffMember.Role.ASV, params.ccn_asv_night_majoration),
+    ):
+        salaries = [m.gross_monthly_salary for m in active_staff(clinic, quarter).filter(role=role)]
+        if salaries:
+            average_hourly = ccn.hourly_rate(sum(salaries, ZERO) / len(salaries))
+            total += hours * average_hourly * Decimal(str(rate))
+    return money(total)
 
 
 def _post_depreciation(clinic, quarter):

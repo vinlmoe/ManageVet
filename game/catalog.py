@@ -15,6 +15,8 @@ EQUIPMENT = [
     ("lab-hemato", "Analyseur d'hématologie", D("12000"), D("900"), 20),
     ("radio-numerique", "Radiographie numérique", D("45000"), D("3200"), 28),
     ("echographe", "Échographe", D("30000"), D("2100"), 20),
+    ("lab-ionogramme", "Analyseur d'ionogrammes", D("8000"), D("600"), 20),
+    ("scanner", "Scanner (tomodensitométrie)", D("180000"), D("11000"), 28),
 ]
 
 # Immobilisations hors catalogue : code, nom, coût, compte, durée (trimestres)
@@ -38,13 +40,26 @@ SERVICES = [
     ("hematologie", "Numération formule sanguine", D("45"), 0.06, 5, 10, D("8"), "lab-hemato"),
     ("radiographie", "Radiographie", D("90"), 0.05, 15, 15, D("5"), "radio-numerique"),
     ("echographie", "Échographie", D("100"), 0.03, 30, 5, D("3"), "echographe"),
+    ("ionogramme", "Ionogramme", D("40"), 0.02, 5, 10, D("6"), "lab-ionogramme"),
+    ("scanner", "Scanner", D("450"), 0.003, 30, 45, D("40"), "scanner"),
 ]
 
-# Prestations réservées aux CHV : mêmes colonnes, matériel requis remplacé par le format.
+# Actes d'équipement lourd sur lesquels les confrères réfèrent leurs patients.
+REFERRAL_EQUIPMENT_SERVICES = {"scanner"}
+
+# Actes de spécialistes (accessibles à toute clinique qui emploie le spécialiste, sauf low-cost).
+# code, nom, prix réf., fréquence, min véto, min ASV, consommables, spécialité requise
+SPECIALIST_SERVICES = [
+    ("consultation-medecine-interne", "Consultation spécialisée de médecine interne", D("110"), 0.008, 45, 10, D("5"), "medecine_interne"),
+    ("chirurgie-specialisee", "Chirurgie spécialisée (orthopédie, tissus mous)", D("1200"), 0.003, 120, 120, D("150"), "chirurgie"),
+    ("imagerie-specialisee", "Interprétation d'imagerie par un spécialiste", D("120"), 0.006, 30, 5, D("0"), "imagerie"),
+]
+
+# Prestations réservées aux CHV (permanence 24 h/24).
+# code, nom, prix réf., fréquence, min véto, min ASV, consommables
 CHV_SERVICES = [
-    ("urgences", "Urgences et garde (nuit, week-end)", D("140"), 0.04, 40, 30, D("15")),
-    ("hospitalisation", "Hospitalisation (journée)", D("95"), 0.05, 15, 60, D("20")),
-    ("chirurgie-specialisee", "Chirurgie spécialisée (orthopédie…)", D("950"), 0.006, 120, 120, D("150")),
+    ("urgences", "Urgences (nuit, dimanche, jours fériés)", D("140"), 0.03, 40, 30, D("15")),
+    ("hospitalisation", "Hospitalisation continue (journée)", D("95"), 0.035, 15, 60, D("20")),
 ]
 
 PRODUCTS = [
@@ -76,8 +91,13 @@ def seed_catalog():
                 "purchasable": False,
             },
         )
-    rows = [(*row, "") for row in SERVICES] + [(*row, None, "chv") for row in CHV_SERVICES]
-    for code, name, price, freq, vet, asv, cons, eq, required_format in rows:
+    rows = (
+        [(*row, "", "") for row in SERVICES]
+        + [(*row[:7], None, "", row[7]) for row in SPECIALIST_SERVICES]
+        + [(*row, None, "chv", "") for row in CHV_SERVICES]
+    )
+    referral = {code for code, *_ in SPECIALIST_SERVICES + CHV_SERVICES} | REFERRAL_EQUIPMENT_SERVICES
+    for code, name, price, freq, vet, asv, cons, eq, required_format, specialty in rows:
         ServiceType.objects.update_or_create(
             code=code,
             defaults={
@@ -89,6 +109,8 @@ def seed_catalog():
                 "consumables_cost": cons,
                 "required_equipment": equipment.get(eq),
                 "required_format": required_format,
+                "required_specialty": specialty,
+                "referral": code in referral,
             },
         )
     for code, name, species, cost, price, units in PRODUCTS:

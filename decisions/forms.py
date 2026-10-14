@@ -3,8 +3,8 @@ from decimal import Decimal
 from django import forms
 
 from accounting.loans import DURATIONS, MIN_AMOUNT
-from clinics.models import Clinic, ClinicEquipment, StaffMember
-from clinics.services import MIN_GROSS_MONTHLY_SALARY
+from clinics import ccn
+from clinics.models import Clinic, ClinicEquipment, Specialty, StaffMember
 
 PRICE = {"min_value": Decimal("0"), "max_digits": 10, "decimal_places": 2}
 
@@ -50,12 +50,51 @@ class ProductsForm(forms.Form):
 
 
 class HireForm(forms.Form):
+    """Recrutement selon la grille de la convention collective."""
+
     role = forms.ChoiceField(label="Poste", choices=StaffMember.Role.choices)
+    level = forms.TypedChoiceField(
+        label="Échelon",
+        coerce=int,
+        choices=[
+            ("Vétérinaire", [(lvl, label) for lvl, (label, _) in ccn.VET_LEVELS.items()]),
+            ("Auxiliaire", [(lvl, label) for lvl, (label, _) in ccn.ASV_LEVELS.items()]),
+        ],
+        initial=ccn.DEFAULT_LEVEL["vet"],
+    )
+    specialty = forms.ChoiceField(
+        label="Spécialité", choices=[("", "Aucune (généraliste)")] + list(Specialty.choices), required=False
+    )
     name = forms.CharField(label="Nom", max_length=100)
     gross_monthly_salary = forms.DecimalField(
-        label="Salaire brut mensuel (€)", min_value=MIN_GROSS_MONTHLY_SALARY, max_value=Decimal("20000"),
+        label="Salaire brut mensuel (€)", min_value=Decimal("0"), max_value=Decimal("20000"),
         max_digits=10, decimal_places=2,
     )
+
+    def __init__(self, *args, point_value, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.point_value = point_value
+
+    def clean(self):
+        data = super().clean()
+        role, level, specialty = data.get("role"), data.get("level"), data.get("specialty")
+        salary = data.get("gross_monthly_salary")
+        if role is None or level is None:
+            return data
+        if level not in ccn.LEVELS[role]:
+            self.add_error("level", "Cet échelon ne correspond pas au poste choisi.")
+            return data
+        if specialty and role != StaffMember.Role.VET:
+            self.add_error("specialty", "Seul un vétérinaire peut être spécialiste.")
+        if specialty and level != ccn.SPECIALIST_LEVEL:
+            self.add_error("level", "Un vétérinaire spécialiste relève de l'échelon 5 (cadre spécialisé).")
+        minimum = ccn.minimum_salary(role, level, self.point_value)
+        if salary is not None and salary < minimum:
+            self.add_error(
+                "gross_monthly_salary",
+                f"Minimum conventionnel pour « {ccn.level_label(role, level)} » : {minimum} € brut.",
+            )
+        return data
 
 
 class AcquireForm(forms.Form):

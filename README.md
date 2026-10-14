@@ -14,6 +14,11 @@ concurrence avec une dizaine d'autres cliniques sur une carte commune.
 Le document de conception détaillé (modèle de données, équations du moteur,
 simplifications) est dans [`docs/conception.tex`](docs/conception.tex).
 
+> **À vérifier avant usage pédagogique** : les seuils réglementaires du CHV
+> et les grilles de la convention collective ont été repris de sources
+> secondaires (voir la section « Sources et réserves » du document de
+> conception). Ils sont tous paramétrables.
+
 ## Démarrage rapide
 
 ```bash
@@ -38,12 +43,19 @@ python manage.py runserver                        # http://127.0.0.1:8000/
 
 - tarifs des prestations et activation de l'offre de soins ;
 - prix de vente et niveau de réassort des gammes de produits ;
-- recrutements et départs (vétérinaires, ASV) ;
+- recrutements et départs selon la **convention collective** des
+  établissements de soins vétérinaires (échelon, salaire ≥ coefficient ×
+  valeur du point, 17,96 € en 2026), y compris des **vétérinaires
+  spécialistes** (médecine interne, chirurgie, imagerie) qui débloquent des
+  actes référés ;
 - achat ou leasing de matériel, résiliation d'un leasing ;
 - **positionnement** : clinique standard, **low-cost** (actes de base,
-  standardisés, moins chers à produire) ou **CHV** (urgences, hospitalisation,
-  chirurgie spécialisée ; exige effectif et plateau technique minimum,
-  travaux d'aménagement, surcoûts de permanence) ;
+  standardisés, moins chers à produire) ou **CHV**. Pour le CHV, conditions
+  inspirées de l'arrêté du 13 mars 2015 et du cahier des charges de l'Ordre :
+  6 vétérinaires dont 2 spécialistes dans 2 disciplines, 6 personnes
+  qualifiées, présence 24 h/24, 3 techniques d'imagerie, laboratoire. Coût
+  de la permanence selon la convention collective (majorations de nuit,
+  dimanche et jours fériés, personnel mobilisé la nuit) ;
 - **emprunts bancaires** : taux selon l'endettement et les résultats,
   échéances trimestrielles constantes, remboursement anticipé avec indemnité ;
 - liste des décisions en attente avec leur impact estimé sur la trésorerie,
@@ -69,7 +81,8 @@ python manage.py seed_demo --name "Choc de demande" --param demand_multiplier=0.
 python manage.py seed_demo --name "Inflation fournisseurs" --param purchase_cost_multiplier=1.25
 python manage.py seed_demo --name "Charges sociales +" --param employer_contribution_rate=0.50
 python manage.py seed_demo --name "Taux à 7 %" --param loan_base_rate_annual=0.07
-python manage.py seed_demo --name "CHV plus exigeant" --param chv_min_vets=6
+python manage.py seed_demo --name "Un seul spécialiste exigé" --param chv_min_specialists=1 --param chv_min_specialties=1
+python manage.py seed_demo --name "Revalorisation du point" --param ccn_point_value=18.50
 ```
 
 ## Mise à jour d'une installation existante

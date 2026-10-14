@@ -1,60 +1,109 @@
 """Formats d'établissement : clinique standard, low-cost, centre hospitalier vétérinaire.
 
-Règles de jeu (simplifiées, paramétrables dans ``SimulationParameters``) :
+Règles de jeu (paramétrables dans ``SimulationParameters``) :
 
-- **Low-cost** : offre restreinte aux actes de base (pas d'imagerie ni de
-  laboratoire, pas d'actes de CHV) ; actes standardisés plus rapides et
-  consommables moins chers. Aucun coût de conversion.
-- **CHV** : exige un effectif minimal de vétérinaires et d'ASV et un plateau
-  technique complet (radiographie, échographie, biochimie, hématologie).
+- **Low-cost** : offre restreinte aux actes de base (pas d'imagerie, de
+  laboratoire, d'actes de spécialiste ni d'actes de CHV) ; actes standardisés
+  plus rapides et consommables moins chers. Aucun coût de conversion.
+- **CHV** : conditions inspirées de l'arrêté du 13 mars 2015 relatif aux
+  catégories d'établissements de soins vétérinaires et du cahier des charges
+  « CHV pour animaux de compagnie » de l'Ordre (24/03/2016) :
+
+  * au moins 6 vétérinaires et 6 personnes qualifiées à temps plein ;
+  * un vétérinaire et une personne qualifiée présents 24 h/24, 7 j/7 ;
+  * des vétérinaires spécialistes (art. R. 242-34 CRPM) dans des disciplines
+    distinctes parmi médecine interne, chirurgie et imagerie ;
+  * au moins trois techniques d'imagerie (radiographie, échographie,
+    scanner, IRM) ;
+  * un laboratoire : biochimie, hématologie, ionogrammes.
+
   Le premier passage en CHV impose des travaux d'aménagement immobilisés
-  (2135) et amortis. Le CHV ouvre des prestations exclusives (urgences,
-  hospitalisation, chirurgie spécialisée), gagne en attractivité mais
-  supporte des surcoûts de permanence des soins. Les conditions sont
-  vérifiées à chaque trimestre : une clinique qui ne les remplit plus perd
-  son statut.
+  (2135) et amortis. Le CHV ouvre les urgences et l'hospitalisation, gagne en
+  attractivité, mais supporte le coût de la permanence (majorations
+  conventionnelles de nuit, dimanche et jours fériés, personnel mobilisé la
+  nuit). Les conditions sont revérifiées à chaque trimestre.
 
-Les seuils réglementaires réels (arrêté relatif aux catégories
-d'établissements de soins vétérinaires) sont à valider par l'équipe
-pédagogique ; ils se règlent via les paramètres ``chv_min_vets`` et
-``chv_min_asv``.
+ATTENTION : les seuils viennent de sources secondaires (le texte officiel
+n'ayant pas pu être consulté) ; les sources divergent notamment sur le
+nombre de spécialistes exigés (un ou deux). Ils sont tous paramétrables.
 """
 
-from .models import Clinic, EquipmentType, StaffMember
+from dataclasses import dataclass, field
+
+from .models import Clinic, EquipmentType, Specialty, StaffMember
 
 Format = Clinic.Format
 
-CHV_REQUIRED_EQUIPMENT = ("radio-numerique", "echographe", "lab-biochimie", "lab-hemato")
+CHV_IMAGING_EQUIPMENT = ("radio-numerique", "echographe", "scanner", "irm")
+CHV_LAB_EQUIPMENT = ("lab-biochimie", "lab-hemato", "lab-ionogramme")
 CHV_FITOUT_CODE = "amenagement-chv"
 
 DESCRIPTIONS = {
-    Format.STANDARD: "Offre complète selon votre matériel, sans contrainte particulière.",
+    Format.STANDARD: "Offre complète selon votre matériel et vos spécialistes, sans contrainte particulière.",
     Format.LOW_COST: "Actes de base uniquement (consultation, vaccination, stérilisation, détartrage). "
     "Protocoles standardisés : temps par acte réduit, consommables moins chers.",
-    Format.CHV: "Urgences 24 h/24, hospitalisation, chirurgie spécialisée. Plus attractif, "
-    "mais exige un effectif et un plateau technique minimum, et coûte cher à faire tourner.",
+    Format.CHV: "Urgences et hospitalisation 24 h/24. Plus attractif, mais exige une équipe nombreuse avec des "
+    "spécialistes, un plateau technique complet et une permanence jour et nuit coûteuse.",
 }
 
 
-def unavailability_reason(clinic_format: str, service_type, owned_equipment_ids: set) -> str | None:
+@dataclass
+class Capabilities:
+    """Ce dont dispose une clinique pour réaliser des actes : matériel et spécialistes."""
+
+    equipment_ids: set = field(default_factory=set)
+    specialties: set = field(default_factory=set)
+
+
+def clinic_capabilities(clinic, quarter: int) -> Capabilities:
+    from .services import active_equipment, active_staff
+
+    return Capabilities(
+        equipment_ids=set(active_equipment(clinic, quarter).values_list("equipment_type_id", flat=True)),
+        specialties=set(active_staff(clinic, quarter).exclude(specialty="").values_list("specialty", flat=True)),
+    )
+
+
+def unavailability_reason(clinic_format: str, service_type, caps: Capabilities) -> str | None:
     """Pourquoi une prestation ne peut pas être proposée (``None`` si elle le peut)."""
     if service_type.required_format and service_type.required_format != clinic_format:
         return f"réservée au format {Format(service_type.required_format).label}"
-    if clinic_format == Format.LOW_COST and service_type.required_equipment_id:
+    if clinic_format == Format.LOW_COST and (service_type.required_equipment_id or service_type.required_specialty):
         return "hors offre low-cost"
     eq = service_type.required_equipment_id
-    if eq and eq not in owned_equipment_ids:
+    if eq and eq not in caps.equipment_ids:
         return f"nécessite : {service_type.required_equipment.name}"
+    if service_type.required_specialty and service_type.required_specialty not in caps.specialties:
+        return f"nécessite un spécialiste en {Specialty(service_type.required_specialty).label.lower()}"
     return None
 
 
-def chv_requirements(vets: int, asvs: int, owned_codes: set, params) -> list[tuple[str, bool]]:
-    names = dict(EquipmentType.objects.filter(code__in=CHV_REQUIRED_EQUIPMENT).values_list("code", "name"))
+def chv_requirements(vets: int, asvs: int, specialties: list[str], owned_codes: set, params) -> list[tuple[str, bool]]:
+    """Liste (libellé, condition remplie) des exigences du CHV.
+
+    ``specialties`` : une entrée par vétérinaire spécialiste (doublons possibles).
+    """
+    names = dict(
+        EquipmentType.objects.filter(code__in=CHV_IMAGING_EQUIPMENT + CHV_LAB_EQUIPMENT).values_list("code", "name")
+    )
+    min_vets, min_asv = int(params.chv_min_vets), int(params.chv_min_asv)
+    min_spe, min_disc, min_img = int(params.chv_min_specialists), int(params.chv_min_specialties), int(params.chv_min_imaging)
+    imaging = [names.get(c, c) for c in CHV_IMAGING_EQUIPMENT if c in owned_codes]
+    disciplines = sorted({Specialty(s).label.lower() for s in specialties})
     rows = [
-        (f"Au moins {int(params.chv_min_vets)} vétérinaires (actuellement {vets})", vets >= params.chv_min_vets),
-        (f"Au moins {int(params.chv_min_asv)} ASV (actuellement {asvs})", asvs >= params.chv_min_asv),
+        (f"Au moins {min_vets} vétérinaires à temps plein (actuellement {vets})", vets >= min_vets),
+        (f"Au moins {min_asv} personnes qualifiées (ASV) à temps plein (actuellement {asvs})", asvs >= min_asv),
+        (
+            f"Au moins {min_spe} vétérinaires spécialistes dans {min_disc} disciplines "
+            f"(actuellement {len(specialties)} : {', '.join(disciplines) or 'aucun'})",
+            len(specialties) >= min_spe and len(disciplines) >= min_disc,
+        ),
+        (
+            f"Au moins {min_img} techniques d'imagerie (actuellement {len(imaging)} : {', '.join(imaging) or 'aucune'})",
+            len(imaging) >= min_img,
+        ),
     ]
-    rows += [(names.get(code, code), code in owned_codes) for code in CHV_REQUIRED_EQUIPMENT]
+    rows += [(names.get(code, code), code in owned_codes) for code in CHV_LAB_EQUIPMENT]
     return rows
 
 
@@ -73,8 +122,13 @@ def current_chv_requirements(clinic, quarter: int, params, durable: bool = False
         staff = staff.filter(left_quarter__isnull=True)
         equipment = equipment.filter(released_quarter__isnull=True)
     owned = set(equipment.values_list("equipment_type__code", flat=True))
+    vets = staff.filter(role=StaffMember.Role.VET)
     return chv_requirements(
-        staff.filter(role=StaffMember.Role.VET).count(), staff.filter(role=StaffMember.Role.ASV).count(), owned, params
+        vets.count(),
+        staff.filter(role=StaffMember.Role.ASV).count(),
+        list(vets.exclude(specialty="").values_list("specialty", flat=True)),
+        owned,
+        params,
     )
 
 
@@ -88,16 +142,23 @@ def has_chv_fitout(clinic) -> bool:
 
 def sync_services(clinic, quarter: int):
     """Désactive les prestations devenues impossibles et active celles réservées au format."""
-    from .services import active_equipment
-
-    owned = set(active_equipment(clinic, quarter).values_list("equipment_type_id", flat=True))
+    caps = clinic_capabilities(clinic, quarter)
     for cs in clinic.services.select_related("service_type__required_equipment"):
-        reason = unavailability_reason(clinic.format, cs.service_type, owned)
+        reason = unavailability_reason(clinic.format, cs.service_type, caps)
         if reason and cs.active:
             cs.active = False
             cs.save(update_fields=["active"])
         elif not reason and cs.service_type.required_format and not cs.active:
             cs.active = True  # les actes de CHV sont proposés dès l'obtention du statut
+            cs.save(update_fields=["active"])
+
+
+def activate_enabled_services(clinic, quarter: int, **service_filter):
+    """Active les prestations (filtrées) que la clinique vient de rendre possibles."""
+    caps = clinic_capabilities(clinic, quarter)
+    for cs in clinic.services.select_related("service_type__required_equipment").filter(active=False, **service_filter):
+        if unavailability_reason(clinic.format, cs.service_type, caps) is None:
+            cs.active = True
             cs.save(update_fields=["active"])
 
 
@@ -132,5 +193,3 @@ def enforce_chv_status(clinic, quarter: int, params) -> str | None:
     clinic.save(update_fields=["format"])
     sync_services(clinic, quarter)
     return "Perte du statut CHV (conditions non remplies : " + " ; ".join(missing) + ")."
-
-

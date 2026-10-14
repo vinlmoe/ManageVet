@@ -13,12 +13,14 @@ from accounting.services import money, post_entry
 from game.placement import rent_for_cell
 from inventory.models import ProductLine, StockItem
 
-from .formats import unavailability_reason
-from .models import Clinic, ClinicEquipment, ClinicService, EquipmentType, ServiceType, StaffMember
+from . import ccn
+from .formats import activate_enabled_services
+from .models import Clinic, ClinicEquipment, ClinicService, EquipmentType, ServiceType, Specialty, StaffMember
 
+# Équipe de départ : un vétérinaire fondateur (échelon 3) et une ASV titrée (échelon 5),
+# rémunérés un peu au-dessus des minima conventionnels 2026.
 DEFAULT_VET_SALARY = Decimal("4000")
-DEFAULT_ASV_SALARY = Decimal("1900")
-MIN_GROSS_MONTHLY_SALARY = Decimal("1800")  # minimum conventionnel simulé
+DEFAULT_ASV_SALARY = Decimal("2200")
 
 
 class OperationError(ValueError):
@@ -62,7 +64,7 @@ def create_clinic(
             price=st.reference_price,
             # Les actes nécessitant du matériel (ou un format particulier) restent
             # inactifs tant que la condition n'est pas remplie.
-            active=st.required_equipment_id is None and not st.required_format,
+            active=st.required_equipment_id is None and not st.required_format and not st.required_specialty,
         )
     for pl in ProductLine.objects.all():
         StockItem.objects.create(clinic=clinic, product_line=pl, retail_price=pl.recommended_price)
@@ -72,18 +74,45 @@ def create_clinic(
     return clinic
 
 
-def hire(clinic: Clinic, role: str, name: str, gross_monthly_salary: Decimal) -> StaffMember:
+def hire(
+    clinic: Clinic,
+    role: str,
+    name: str,
+    gross_monthly_salary: Decimal,
+    level: int | None = None,
+    specialty: str = "",
+) -> StaffMember:
+    """Recrute un salarié en respectant la grille de la convention collective."""
     if role not in StaffMember.Role.values:
         raise OperationError(f"Rôle inconnu : {role}")
-    if Decimal(gross_monthly_salary) < MIN_GROSS_MONTHLY_SALARY:
-        raise OperationError(f"Salaire inférieur au minimum conventionnel simulé ({MIN_GROSS_MONTHLY_SALARY} € brut).")
-    return StaffMember.objects.create(
+    level = int(level) if level is not None else ccn.DEFAULT_LEVEL[role]
+    if level not in ccn.LEVELS[role]:
+        raise OperationError(f"Échelon {level} non prévu pour ce poste.")
+    if specialty:
+        if role != StaffMember.Role.VET:
+            raise OperationError("Seul un vétérinaire peut être spécialiste.")
+        if specialty not in Specialty.values:
+            raise OperationError(f"Spécialité inconnue : {specialty}")
+        if level != ccn.SPECIALIST_LEVEL:
+            raise OperationError("Un vétérinaire spécialiste relève de l'échelon 5 (cadre spécialisé).")
+    minimum = ccn.minimum_salary(role, level, clinic.server.get_parameters().ccn_point_value)
+    if Decimal(gross_monthly_salary) < minimum:
+        raise OperationError(
+            f"Salaire inférieur au minimum conventionnel : {minimum} € brut pour « {ccn.level_label(role, level)} »."
+        )
+    member = StaffMember.objects.create(
         clinic=clinic,
         role=role,
         name=name,
+        level=level,
+        specialty=specialty,
         gross_monthly_salary=money(gross_monthly_salary),
         hired_quarter=clinic.server.current_quarter,
     )
+    if specialty:
+        # Les actes de la spécialité deviennent possibles : on les propose d'office.
+        activate_enabled_services(clinic, clinic.server.current_quarter, service_type__required_specialty=specialty)
+    return member
 
 
 def dismiss(clinic: Clinic, staff_id: int, severance_months: float) -> StaffMember:
@@ -127,14 +156,8 @@ def acquire_equipment(clinic: Clinic, equipment_code: str, mode: str) -> ClinicE
             lease_per_quarter=eq_type.lease_per_quarter,
         )
     # Activer automatiquement les prestations rendues possibles par ce matériel
-    # (si le format de la clinique les autorise).
-    owned = set(active_equipment(clinic, clinic.server.current_quarter).values_list("equipment_type_id", flat=True))
-    for cs in clinic.services.select_related("service_type__required_equipment").filter(
-        service_type__required_equipment=eq_type, active=False
-    ):
-        if unavailability_reason(clinic.format, cs.service_type, owned) is None:
-            cs.active = True
-            cs.save(update_fields=["active"])
+    # (si le format de la clinique et les spécialistes présents les autorisent).
+    activate_enabled_services(clinic, clinic.server.current_quarter, service_type__required_equipment=eq_type)
     return item
 
 

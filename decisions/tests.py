@@ -115,11 +115,11 @@ class DecisionBoardTests(TestCase):
     # --- Personnel -----------------------------------------------------------------
 
     def test_hire(self):
-        self.post(action="hire", role="vet", name="Dr Martin", gross_monthly_salary="4100")
+        self.post(action="hire", role="vet", level="3", name="Dr Martin", gross_monthly_salary="4100")
         self.assertEqual(self.pending(Kind.HIRE).get().payload["name"], "Dr Martin")
 
     def test_hire_below_minimum_rejected(self):
-        response = self.post(action="hire", role="asv", name="X", gross_monthly_salary="1000")
+        response = self.post(action="hire", role="asv", level="5", name="X", gross_monthly_salary="1000")
         self.assertContains(response, "errorlist")
         self.assertFalse(self.pending().exists())
 
@@ -144,7 +144,7 @@ class DecisionBoardTests(TestCase):
     # --- Annulation et cycle complet ------------------------------------------------
 
     def test_cancel(self):
-        self.post(action="hire", role="asv", name="Léa", gross_monthly_salary="1950")
+        self.post(action="hire", role="asv", level="5", name="Léa", gross_monthly_salary="2200")
         decision = self.pending().get()
         self.post(action="cancel", object_id=decision.pk)
         decision.refresh_from_db()
@@ -152,7 +152,7 @@ class DecisionBoardTests(TestCase):
 
     def test_full_cycle_with_resolution(self):
         self.post(action="acquire", equipment="lab-biochimie", mode="lease")
-        self.post(action="hire", role="vet", name="Dr Martin", gross_monthly_salary="4100")
+        self.post(action="hire", role="vet", level="3", name="Dr Martin", gross_monthly_salary="4100")
         self.post(**self.services_data(price_consultation="48"))
         resolve_quarter(self.server)
         self.assertFalse(self.pending().exists())
@@ -170,18 +170,22 @@ class DecisionBoardTests(TestCase):
         response = self.client.get(self.url)
         self.assertContains(response, "Positionnement de la clinique")
         self.assertContains(response, "Centre hospitalier vétérinaire (CHV)")
-        self.assertContains(response, "✗ Au moins 4 vétérinaires (actuellement 1)")
+        self.assertContains(response, "✗ Au moins 6 vétérinaires à temps plein (actuellement 1)")
+        self.assertContains(response, "✗ Au moins 2 vétérinaires spécialistes")
         self.assertContains(response, "Financement")
         self.assertContains(response, "Capacité d'emprunt restante")
 
     def test_chv_checklist_reflects_pending_decisions(self):
         for _ in range(3):
-            self.post(action="hire", role="vet", name="Véto", gross_monthly_salary="4000")
+            self.post(action="hire", role="vet", level="3", name="Véto", gross_monthly_salary="4000")
+        for specialty in ("chirurgie", "imagerie"):
+            self.post(action="hire", role="vet", level="5", specialty=specialty, name="Spé", gross_monthly_salary="6000")
         self.post(action="acquire", equipment="echographe", mode="lease")
         response = self.client.get(self.url)
-        self.assertContains(response, "✓ Au moins 4 vétérinaires (actuellement 4)")
-        self.assertContains(response, "✓ Échographe")
-        self.assertContains(response, "✗ Radiographie numérique")
+        self.assertContains(response, "✓ Au moins 6 vétérinaires à temps plein (actuellement 6)")
+        self.assertContains(response, "✓ Au moins 2 vétérinaires spécialistes dans 2 disciplines (actuellement 2 : chirurgie, imagerie médicale)")
+        self.assertContains(response, "✗ Au moins 3 techniques d&#x27;imagerie (actuellement 1 : Échographe)")
+        self.assertContains(response, "✗ Analyseur de biochimie")
 
     def test_set_format_replaces_and_cancels(self):
         self.post(action="format", format="low_cost")
@@ -238,6 +242,6 @@ class DecisionBoardTests(TestCase):
     def test_finished_server_is_read_only(self):
         self.server.status = GameServer.Status.FINISHED
         self.server.save()
-        response = self.post(action="hire", role="vet", name="Dr X", gross_monthly_salary="4000")
+        response = self.post(action="hire", role="vet", level="3", name="Dr X", gross_monthly_salary="4000")
         self.assertContains(response, "lecture seule")
         self.assertFalse(self.pending().exists())
