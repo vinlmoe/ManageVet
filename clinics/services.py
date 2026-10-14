@@ -13,6 +13,7 @@ from accounting.services import money, post_entry
 from game.placement import rent_for_cell
 from inventory.models import ProductLine, StockItem
 
+from .formats import unavailability_reason
 from .models import Clinic, ClinicEquipment, ClinicService, EquipmentType, ServiceType, StaffMember
 
 DEFAULT_VET_SALARY = Decimal("4000")
@@ -59,8 +60,9 @@ def create_clinic(
             clinic=clinic,
             service_type=st,
             price=st.reference_price,
-            # Les actes nécessitant du matériel restent inactifs tant qu'il n'est pas acquis.
-            active=st.required_equipment_id is None,
+            # Les actes nécessitant du matériel (ou un format particulier) restent
+            # inactifs tant que la condition n'est pas remplie.
+            active=st.required_equipment_id is None and not st.required_format,
         )
     for pl in ProductLine.objects.all():
         StockItem.objects.create(clinic=clinic, product_line=pl, retail_price=pl.recommended_price)
@@ -109,25 +111,49 @@ def acquire_equipment(clinic: Clinic, equipment_code: str, mode: str) -> ClinicE
         raise OperationError(f"Matériel inconnu : {equipment_code}")
     if mode not in ClinicEquipment.Mode.values:
         raise OperationError(f"Mode d'acquisition inconnu : {mode}")
+    if not eq_type.purchasable:
+        raise OperationError(f"{eq_type.name} n'est pas proposé au catalogue.")
     if clinic.equipment.filter(equipment_type=eq_type, released_quarter__isnull=True).exists():
         raise OperationError("La clinique possède déjà ce matériel.")
 
-    quarter = clinic.server.current_quarter
-    item = ClinicEquipment(clinic=clinic, equipment_type=eq_type, mode=mode, acquired_quarter=quarter)
     if mode == ClinicEquipment.Mode.PURCHASE:
-        item.purchase_price = eq_type.purchase_price
-        item.save()
-        post_entry(
-            clinic,
-            quarter,
-            f"Achat {eq_type.name}",
-            [(pcg.EQUIPMENT, eq_type.purchase_price, 0), (pcg.BANK, 0, eq_type.purchase_price)],
-        )
+        item = capitalize_asset(clinic, eq_type)
     else:
-        item.lease_per_quarter = eq_type.lease_per_quarter
-        item.save()
-    # Activer automatiquement les prestations rendues possibles par ce matériel.
-    clinic.services.filter(service_type__required_equipment=eq_type).update(active=True)
+        item = ClinicEquipment.objects.create(
+            clinic=clinic,
+            equipment_type=eq_type,
+            mode=mode,
+            acquired_quarter=clinic.server.current_quarter,
+            lease_per_quarter=eq_type.lease_per_quarter,
+        )
+    # Activer automatiquement les prestations rendues possibles par ce matériel
+    # (si le format de la clinique les autorise).
+    owned = set(active_equipment(clinic, clinic.server.current_quarter).values_list("equipment_type_id", flat=True))
+    for cs in clinic.services.select_related("service_type__required_equipment").filter(
+        service_type__required_equipment=eq_type, active=False
+    ):
+        if unavailability_reason(clinic.format, cs.service_type, owned) is None:
+            cs.active = True
+            cs.save(update_fields=["active"])
+    return item
+
+
+def capitalize_asset(clinic: Clinic, eq_type: EquipmentType) -> ClinicEquipment:
+    """Achat d'une immobilisation : décaissement et inscription à l'actif (2154, 2135…)."""
+    quarter = clinic.server.current_quarter
+    item = ClinicEquipment.objects.create(
+        clinic=clinic,
+        equipment_type=eq_type,
+        mode=ClinicEquipment.Mode.PURCHASE,
+        acquired_quarter=quarter,
+        purchase_price=eq_type.purchase_price,
+    )
+    post_entry(
+        clinic,
+        quarter,
+        f"Achat {eq_type.name}",
+        [(eq_type.asset_account, eq_type.purchase_price, 0), (pcg.BANK, 0, eq_type.purchase_price)],
+    )
     return item
 
 

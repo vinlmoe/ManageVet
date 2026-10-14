@@ -40,6 +40,12 @@ python manage.py runserver                        # http://127.0.0.1:8000/
 - prix de vente et niveau de réassort des gammes de produits ;
 - recrutements et départs (vétérinaires, ASV) ;
 - achat ou leasing de matériel, résiliation d'un leasing ;
+- **positionnement** : clinique standard, **low-cost** (actes de base,
+  standardisés, moins chers à produire) ou **CHV** (urgences, hospitalisation,
+  chirurgie spécialisée ; exige effectif et plateau technique minimum,
+  travaux d'aménagement, surcoûts de permanence) ;
+- **emprunts bancaires** : taux selon l'endettement et les résultats,
+  échéances trimestrielles constantes, remboursement anticipé avec indemnité ;
 - liste des décisions en attente avec leur impact estimé sur la trésorerie,
   et possibilité de les annuler jusqu'à la résolution.
 
@@ -62,6 +68,15 @@ Chaque serveur accepte des surcharges de paramètres (voir
 python manage.py seed_demo --name "Choc de demande" --param demand_multiplier=0.7
 python manage.py seed_demo --name "Inflation fournisseurs" --param purchase_cost_multiplier=1.25
 python manage.py seed_demo --name "Charges sociales +" --param employer_contribution_rate=0.50
+python manage.py seed_demo --name "Taux à 7 %" --param loan_base_rate_annual=0.07
+python manage.py seed_demo --name "CHV plus exigeant" --param chv_min_vets=6
+```
+
+## Mise à jour d'une installation existante
+
+```bash
+python manage.py migrate
+python manage.py seed_catalog   # nouvelles prestations / immobilisations, ajoutées aux cliniques existantes
 ```
 
 La résolution est déterministe (graine du serveur) : mêmes décisions ⇒ mêmes résultats.

@@ -36,6 +36,10 @@
     .errorlist { color: var(--bad); margin: 0; padding-left: 1rem; font-size: .85em; }
     .tag { font-size: .8em; padding: .1rem .4rem; border-radius: 3px; background: var(--bg-soft); color: var(--muted); }
     .table-scroll { overflow-x: auto; }
+    .format-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8rem; margin-bottom: .8rem; }
+    .format-option { display: flex; flex-direction: column; gap: .3rem; border: 1px solid var(--line); border-radius: 6px; padding: .6rem .8rem; cursor: pointer; }
+    .format-option.selected, .format-option:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .checklist { list-style: none; padding: 0; margin: .2rem 0; font-size: .9em; }
     form.stacked label { display: block; font-weight: 600; }
     form.stacked .help { display: block; }
     form.stacked .help ul { margin: .2rem 0; }

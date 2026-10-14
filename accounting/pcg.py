@@ -8,6 +8,8 @@ Simplifications assumées de la V1 :
 """
 
 CAPITAL = "101"
+LOANS = "164"  # Emprunts auprès des établissements de crédit
+FITOUT = "2135"  # Installations générales, agencements, aménagements des constructions
 EQUIPMENT = "2154"  # Matériel industriel (matériel médical)
 EQUIPMENT_DEPRECIATION = "28154"
 STOCK_GOODS = "37"  # Stocks de marchandises
@@ -23,7 +25,9 @@ OTHER_EXTERNAL = "628"  # Divers (énergie, assurances, télécom… regroupés)
 SALARIES = "6411"  # Salaires, appointements
 SEVERANCE = "6414"  # Indemnités et avantages divers
 SOCIAL_CHARGES = "645"  # Charges de sécurité sociale et de prévoyance
+LOAN_INTEREST = "6611"  # Intérêts des emprunts et dettes
 BANK_INTEREST = "6615"  # Intérêts des comptes courants et découverts
+OTHER_FINANCIAL = "668"  # Autres charges financières (indemnité de remboursement anticipé)
 DEPRECIATION_EXPENSE = "6811"  # Dotations aux amortissements
 
 SERVICES_REVENUE = "706"  # Prestations de services
@@ -31,6 +35,9 @@ GOODS_REVENUE = "707"  # Ventes de marchandises
 
 LABELS = {
     CAPITAL: "Capital",
+    LOANS: "Emprunts bancaires",
+    FITOUT: "Agencements et installations",
+    "28135": "Amortissements des agencements",
     EQUIPMENT: "Matériel médical",
     EQUIPMENT_DEPRECIATION: "Amortissements du matériel",
     STOCK_GOODS: "Stocks de marchandises",
@@ -45,7 +52,9 @@ LABELS = {
     SALARIES: "Salaires",
     SEVERANCE: "Indemnités de rupture",
     SOCIAL_CHARGES: "Charges sociales",
+    LOAN_INTEREST: "Intérêts des emprunts",
     BANK_INTEREST: "Agios",
+    OTHER_FINANCIAL: "Autres charges financières",
     DEPRECIATION_EXPENSE: "Dotations aux amortissements",
     SERVICES_REVENUE: "Prestations de services",
     GOODS_REVENUE: "Ventes de marchandises",
@@ -54,3 +63,8 @@ LABELS = {
 
 def label(account: str) -> str:
     return LABELS.get(account, account)
+
+
+def depreciation_account(asset_account: str) -> str:
+    """Compte d'amortissement associé : 2154 -> 28154, 2135 -> 28135."""
+    return "28" + asset_account[1:]

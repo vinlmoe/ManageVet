@@ -2,7 +2,7 @@
 {% block title %}{{ clinic.name }}{% endblock %}
 {% block content %}
 <h1>{{ clinic.name }}</h1>
-<p><a href="{% url 'game:server_map' clinic.server.pk %}">{{ clinic.server }}</a> — case ({{ clinic.x }}, {{ clinic.y }}) —
+<p><a href="{% url 'game:server_map' clinic.server.pk %}">{{ clinic.server }}</a> — <strong>{{ clinic.get_format_display }}</strong> — case ({{ clinic.x }}, {{ clinic.y }}) —
 trésorerie {{ clinic.cash|floatformat:2 }} € (compte 512 : {{ bank_balance|floatformat:2 }} €) — réputation {{ clinic.reputation|floatformat:2 }}</p>
 {% if clinic.server.status == "running" %}
 <p><a class="button" href="{% url 'decisions:board' clinic.pk %}">Prendre mes décisions du trimestre {{ clinic.server.current_quarter }}</a></p>
@@ -19,14 +19,30 @@ trésorerie {{ clinic.cash|floatformat:2 }} € (compte 512 : {{ bank_balance|fl
   <tr><td>Charges externes (61/62)</td>{% for r in reports %}<td>{{ r.external_charges|floatformat:0 }}</td>{% endfor %}</tr>
   <tr><td>Personnel (641/645)</td>{% for r in reports %}<td>{{ r.payroll|floatformat:0 }}</td>{% endfor %}</tr>
   <tr><td>Amortissements (6811)</td>{% for r in reports %}<td>{{ r.depreciation|floatformat:0 }}</td>{% endfor %}</tr>
-  <tr><td>Agios (6615)</td>{% for r in reports %}<td>{{ r.financial_charges|floatformat:0 }}</td>{% endfor %}</tr>
+  <tr><td>Charges financières (6611, 6615, 668)</td>{% for r in reports %}<td>{{ r.financial_charges|floatformat:0 }}</td>{% endfor %}</tr>
   <tr><th>Résultat</th>{% for r in reports %}<th class="{% if r.net_result < 0 %}neg{% endif %}">{{ r.net_result|floatformat:0 }}</th>{% endfor %}</tr>
   <tr><td>Trésorerie fin</td>{% for r in reports %}<td>{{ r.cash_end|floatformat:0 }}</td>{% endfor %}</tr>
+  <tr><td>Emprunts restant dus</td>{% for r in reports %}<td>{{ r.debt_end|floatformat:0 }}</td>{% endfor %}</tr>
+  <tr><td>Capitaux propres</td>{% for r in reports %}<td class="{% if r.equity_end < 0 %}neg{% endif %}">{{ r.equity_end|floatformat:0 }}</td>{% endfor %}</tr>
+  <tr><td>Format</td>{% for r in reports %}<td>{% if r.clinic_format == "chv" %}CHV{% elif r.clinic_format == "low_cost" %}Low-cost{% else %}Standard{% endif %}</td>{% endfor %}</tr>
   <tr><td>Animaux suivis</td>{% for r in reports %}<td>{{ r.patients_dogs|add:r.patients_cats }}</td>{% endfor %}</tr>
   <tr><td>Actes</td>{% for r in reports %}<td>{{ r.acts }}</td>{% endfor %}</tr>
   <tr><td>Demande servie</td>{% for r in reports %}<td>{% widthratio r.capacity_ratio 1 100 %} %</td>{% endfor %}</tr>
   <tr><td>Part de marché</td>{% for r in reports %}<td>{% widthratio r.market_share 1 100 %} %</td>{% endfor %}</tr>
 </table>
+
+{% for r in reports %}{% for event in r.details.events %}
+<ul class="messages"><li class="error">T{{ r.quarter }} — {{ event }}</li></ul>
+{% endfor %}{% endfor %}
+
+{% if loans %}
+<h2>Emprunts</h2>
+<table>
+  <tr><th>Capital</th><th>Taux</th><th>Échéance / trim.</th><th>Restant dû</th><th>Échéances payées</th></tr>
+  {% for loan, rate_pct in loans %}<tr><td>{{ loan.principal|floatformat:0 }} €</td><td>{{ rate_pct|floatformat:2 }} %</td>
+    <td>{{ loan.quarterly_payment|floatformat:0 }} €</td><td>{{ loan.remaining_principal|floatformat:0 }} €</td><td>{{ loan.installments_paid }}/{{ loan.duration_quarters }}</td></tr>{% endfor %}
+</table>
+{% endif %}
 
 <h2>Personnel</h2>
 <table>{% for m in staff %}<tr><td>{{ m }}</td><td>{{ m.gross_monthly_salary|floatformat:0 }} € brut/mois</td></tr>{% endfor %}</table>

@@ -10,10 +10,19 @@ MONEY = {"max_digits": 12, "decimal_places": 2}
 
 
 class EquipmentType(models.Model):
-    """Matériel acquérable : achat (immobilisé et amorti) ou leasing."""
+    """Matériel acquérable : achat (immobilisé et amorti) ou leasing.
+
+    Sert aussi pour les immobilisations qui ne sont pas au catalogue
+    (``purchasable=False``), comme les aménagements d'un CHV.
+    """
 
     code = models.SlugField(unique=True)
     name = models.CharField("nom", max_length=100)
+    purchasable = models.BooleanField("proposé au catalogue", default=True)
+    asset_account = models.CharField(
+        "compte d'immobilisation", max_length=10, default="2154",
+        help_text="2154 matériel ; 2135 installations et agencements.",
+    )
     purchase_price = models.DecimalField("prix d'achat HT", **MONEY)
     lease_per_quarter = models.DecimalField("loyer de leasing / trimestre HT", **MONEY)
     useful_life_quarters = models.PositiveSmallIntegerField("durée d'amortissement (trimestres)", default=20)
@@ -38,6 +47,9 @@ class ServiceType(models.Model):
     required_equipment = models.ForeignKey(
         EquipmentType, null=True, blank=True, on_delete=models.PROTECT, related_name="services"
     )
+    required_format = models.CharField(
+        "réservée au format", max_length=10, blank=True, help_text="Ex. « chv » pour les urgences 24 h/24."
+    )
 
     class Meta:
         verbose_name = "type de prestation"
@@ -55,6 +67,11 @@ class ServiceType(models.Model):
 
 
 class Clinic(models.Model):
+    class Format(models.TextChoices):
+        STANDARD = "standard", "Clinique vétérinaire"
+        LOW_COST = "low_cost", "Clinique low-cost"
+        CHV = "chv", "Centre hospitalier vétérinaire (CHV)"
+
     server = models.ForeignKey("game.GameServer", on_delete=models.CASCADE, related_name="clinics")
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="clinics")
     name = models.CharField("nom", max_length=100)
@@ -69,6 +86,7 @@ class Clinic(models.Model):
         "honoraires expert-comptable / trimestre HT", **MONEY, default=Decimal("1500")
     )
     reputation = models.FloatField("réputation (0-1)", default=0.5)
+    format = models.CharField("format", max_length=10, choices=Format.choices, default=Format.STANDARD)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

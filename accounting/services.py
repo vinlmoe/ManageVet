@@ -80,7 +80,7 @@ def income_statement(clinic, quarter: int) -> dict[str, Decimal]:
         "external_charges": charge(pcg.LEASING, pcg.RENT, pcg.FEES, pcg.OTHER_EXTERNAL),
         "payroll": charge(pcg.SALARIES, pcg.SEVERANCE, pcg.SOCIAL_CHARGES),
         "depreciation": charge(pcg.DEPRECIATION_EXPENSE),
-        "financial_charges": charge(pcg.BANK_INTEREST),
+        "financial_charges": charge(pcg.LOAN_INTEREST, pcg.BANK_INTEREST, pcg.OTHER_FINANCIAL),
     }
     # Résultat = produits (classe 7) - charges (classe 6), calculé sur tout le journal
     # pour ne rien oublier si un compte est ajouté plus tard.
@@ -88,3 +88,16 @@ def income_statement(clinic, quarter: int) -> dict[str, Decimal]:
         clinic, "6", quarter=quarter
     )
     return data
+
+
+def equity(clinic, up_to_quarter: int | None = None) -> Decimal:
+    """Capitaux propres : capital + résultats cumulés (pas encore de clôture annuelle)."""
+    capital = -account_balance(clinic, "10", up_to_quarter=up_to_quarter)
+    results = -account_balance(clinic, "7", up_to_quarter=up_to_quarter) - account_balance(
+        clinic, "6", up_to_quarter=up_to_quarter
+    )
+    return capital + results
+
+
+def outstanding_debt(clinic) -> Decimal:
+    return -account_balance(clinic, pcg.LOANS)

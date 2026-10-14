@@ -75,6 +75,9 @@ class QuarterReport(models.Model):
     # Bilan simplifié en fin de trimestre
     cash_end = models.DecimalField(**MONEY, default=Decimal("0"))
     stock_value_end = models.DecimalField(**MONEY, default=Decimal("0"))
+    debt_end = models.DecimalField("emprunts restant dus", **MONEY, default=Decimal("0"))
+    equity_end = models.DecimalField("capitaux propres", **MONEY, default=Decimal("0"))
+    clinic_format = models.CharField("format", max_length=10, blank=True)
 
     details = models.JSONField(default=dict, blank=True)
 
@@ -94,3 +97,40 @@ class QuarterReport(models.Model):
     @property
     def gross_margin_goods(self) -> Decimal:
         return self.revenue_goods - self.purchases_goods - self.stock_variation
+
+
+class Loan(models.Model):
+    """Emprunt bancaire amortissable à échéances trimestrielles constantes.
+
+    Le taux est figé à la souscription. Les échéances commencent le
+    trimestre qui suit le décaissement.
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "En cours"
+        REPAID = "repaid", "Remboursé"
+
+    clinic = models.ForeignKey("clinics.Clinic", on_delete=models.CASCADE, related_name="loans")
+    principal = models.DecimalField("capital emprunté", **MONEY)
+    annual_rate = models.DecimalField("taux annuel", max_digits=6, decimal_places=4)
+    duration_quarters = models.PositiveSmallIntegerField("durée (trimestres)")
+    start_quarter = models.PositiveSmallIntegerField("trimestre de décaissement")
+    quarterly_payment = models.DecimalField("échéance trimestrielle", **MONEY)
+    remaining_principal = models.DecimalField("capital restant dû", **MONEY)
+    installments_paid = models.PositiveSmallIntegerField(default=0)
+    status = models.CharField(max_length=6, choices=Status.choices, default=Status.ACTIVE)
+
+    class Meta:
+        verbose_name = "emprunt"
+        ordering = ["start_quarter", "id"]
+
+    def __str__(self):
+        return f"{self.principal} € à {self.annual_rate:.2%} sur {self.duration_quarters} trim."
+
+    @property
+    def quarterly_rate(self) -> Decimal:
+        return self.annual_rate / 4
+
+    @property
+    def end_quarter(self) -> int:
+        return self.start_quarter + self.duration_quarters

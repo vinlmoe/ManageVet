@@ -5,8 +5,10 @@ from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.utils import timezone
 
+from accounting import loans
+from clinics import formats
 from clinics import services as clinic_services
-from clinics.services import OperationError
+from clinics.services import OperationError, active_equipment
 
 from .models import PendingDecision
 
@@ -34,9 +36,11 @@ def _set_service(clinic, payload, params):
         cs.price = price
     if "active" in payload:
         active = bool(payload["active"])
-        eq = cs.service_type.required_equipment
-        if active and eq and not clinic.equipment.filter(equipment_type=eq, released_quarter__isnull=True).exists():
-            raise OperationError(f"Cette prestation nécessite : {eq.name}.")
+        if active:
+            owned = set(active_equipment(clinic, clinic.server.current_quarter).values_list("equipment_type_id", flat=True))
+            reason = formats.unavailability_reason(clinic.format, cs.service_type, owned)
+            if reason:
+                raise OperationError(f"{cs.service_type.name} : {reason}.")
         cs.active = active
     cs.save()
     return f"{cs.service_type.name} : {cs.price} € HT, {'active' if cs.active else 'inactive'}"
@@ -80,6 +84,20 @@ def _release(clinic, payload, params):
     return f"Fin de leasing : {item}"
 
 
+def _set_format(clinic, payload, params):
+    return formats.set_format(clinic, payload.get("format"), params)
+
+
+def _borrow(clinic, payload, params):
+    loan = loans.borrow(clinic, _decimal(payload, "amount"), int(payload.get("duration_quarters", 0)), params)
+    return f"Emprunt accordé : {loan}, échéance {loan.quarterly_payment} €/trim."
+
+
+def _repay(clinic, payload, params):
+    loan = loans.repay_early(clinic, int(payload.get("loan_id", 0)), params)
+    return f"Emprunt soldé : {loan}"
+
+
 HANDLERS = {
     PendingDecision.Kind.SET_SERVICE: _set_service,
     PendingDecision.Kind.SET_PRODUCT: _set_product,
@@ -87,7 +105,14 @@ HANDLERS = {
     PendingDecision.Kind.DISMISS: _dismiss,
     PendingDecision.Kind.ACQUIRE_EQUIPMENT: _acquire,
     PendingDecision.Kind.RELEASE_EQUIPMENT: _release,
+    PendingDecision.Kind.SET_FORMAT: _set_format,
+    PendingDecision.Kind.BORROW: _borrow,
+    PendingDecision.Kind.REPAY_LOAN: _repay,
 }
+
+# Le changement de format est appliqué en dernier : les recrutements et le
+# matériel décidés le même trimestre comptent pour les conditions du CHV.
+APPLY_LAST = {PendingDecision.Kind.SET_FORMAT}
 
 
 def apply_pending_decisions(clinic, quarter: int, params) -> list[PendingDecision]:
@@ -96,6 +121,7 @@ def apply_pending_decisions(clinic, quarter: int, params) -> list[PendingDecisio
     Une décision invalide est rejetée avec un message, sans bloquer les autres.
     """
     decisions = list(clinic.decisions.filter(quarter=quarter, status=PendingDecision.Status.PENDING))
+    decisions.sort(key=lambda d: d.kind in APPLY_LAST)  # tri stable : l'ordre chronologique est conservé
     now = timezone.now()
     for decision in decisions:
         handler = HANDLERS.get(decision.kind)

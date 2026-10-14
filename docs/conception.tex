@@ -183,6 +183,62 @@ de sorte que le coût des marchandises vendues vaut $607 + 6037$.
 \]
 où $\phi_c$ est le taux de service du stock et $\lambda$ l'inertie.
 
+\section{Formats d'établissement}
+
+Chaque clinique choisit un format, modifiable par une décision du
+trimestre. Cette décision est appliquée \emph{après} les autres : les
+recrutements et le matériel décidés le même trimestre comptent pour les
+conditions d'accès.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lXX@{}}
+\toprule
+Format & Conditions et coûts & Effets \\
+\midrule
+Standard & --- & Offre selon le matériel possédé. \\
+Low-cost & Offre limitée aux actes sans matériel (consultation,
+  vaccination, stérilisation, détartrage). &
+  Temps par acte $\times 0{,}75$, consommables $\times 0{,}85$ ;
+  ratio d'offre $O_c$ plus faible. \\
+CHV & $\geq 4$ vétérinaires, $\geq 4$ ASV, radiographie, échographie,
+  biochimie, hématologie ; travaux d'aménagement de 60\,000 euros (compte
+  2135, amortis sur 40 trimestres, payés une seule fois) ;
+  15\,000 euros par trimestre de permanence des soins et majorations de
+  15\,\% sur les salaires. &
+  Bonus d'utilité $b_c = 0{,}6$ dans le logit ; prestations exclusives
+  (urgences, hospitalisation, chirurgie spécialisée). \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+L'utilité devient $U_{zc} + b_c$. Les actes exclusifs du CHV n'entrent pas
+dans le panier de référence de $I_c$ et $O_c$ : leur effet passe par $b_c$.
+Les conditions du CHV sont revérifiées à chaque trimestre ; une clinique
+qui ne les remplit plus redevient standard (événement signalé dans son
+rapport). Les seuils sont des règles de jeu simplifiées, à confronter à la
+réglementation des catégories d'établissements de soins vétérinaires et
+réglables par paramètre.
+
+\section{Emprunts bancaires}
+
+Un emprunt de capital $P$ sur $n$ trimestres au taux annuel $t$ est
+remboursé par échéances constantes, à partir du trimestre suivant le
+déblocage :
+\[
+  a = P\,\frac{r}{1-(1+r)^{-n}}, \qquad r = \frac{t}{4}.
+\]
+Chaque échéance se décompose en intérêts $r \cdot \mathrm{CRD}$ (compte
+6611) et amortissement du capital (compte 164). La banque fixe le taux à
+la souscription :
+\[
+  t = t_0 + \pi_\ell\,\frac{D + P}{\mathit{CP}} + \pi_p\,\mathbb{1}_{\text{dernier résultat} < 0},
+\]
+avec $t_0 = 4{,}5\,\%$, $\pi_\ell = 1$ point par unité d'endettement,
+$\pi_p = 1$ point, $D$ la dette existante et $\mathit{CP}$ les capitaux
+propres (capital et résultats cumulés). Elle refuse si $\mathit{CP} \le 0$
+ou si $D + P > \min(3\,\mathit{CP},\ 400\,000)$. Le remboursement anticipé
+solde le capital restant dû et coûte une indemnité de 3\,\% (compte 668).
+
 \section{Comptabilité}
 
 Écritures types (montants HT) :
@@ -198,6 +254,9 @@ Dotation aux amortissements (linéaire) & 6811 & 28154 \\
 Loyer de leasing & 6122 & 512 \\
 Réassort & 607 & 512 \\
 Prestations & 512 & 706 \\
+Déblocage d'un emprunt & 512 & 164 \\
+Échéance d'emprunt & 6611 / 164 & 512 \\
+Travaux d'aménagement CHV & 2135 & 512 \\
 Ventes de marchandises & 512 & 707 \\
 Salaires / charges patronales & 6411 / 645 & 512 \\
 Loyer / honoraires / divers & 6132 / 6226 / 628 & 512 \\

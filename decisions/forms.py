@@ -2,7 +2,8 @@ from decimal import Decimal
 
 from django import forms
 
-from clinics.models import ClinicEquipment, StaffMember
+from accounting.loans import DURATIONS, MIN_AMOUNT
+from clinics.models import Clinic, ClinicEquipment, StaffMember
 from clinics.services import MIN_GROSS_MONTHLY_SALARY
 
 PRICE = {"min_value": Decimal("0"), "max_digits": 10, "decimal_places": 2}
@@ -66,3 +67,19 @@ class IdForm(forms.Form):
     """Sert aux actions portant sur un objet existant (départ, résiliation, annulation)."""
 
     object_id = forms.IntegerField(min_value=1)
+
+
+class FormatForm(forms.Form):
+    format = forms.ChoiceField(label="Format", choices=Clinic.Format.choices, widget=forms.RadioSelect)
+
+
+class BorrowForm(forms.Form):
+    amount = forms.DecimalField(
+        label="Montant (€)", min_value=MIN_AMOUNT, max_value=Decimal("1000000"), max_digits=10, decimal_places=0
+    )
+    duration_quarters = forms.TypedChoiceField(
+        label="Durée",
+        coerce=int,
+        choices=[(d, f"{d // 4} an{'s' if d > 4 else ''}") for d in DURATIONS],
+        initial=20,
+    )

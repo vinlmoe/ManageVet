@@ -42,6 +42,26 @@ class SimulationParameters:
     # --- Réputation -----------------------------------------------------------
     reputation_inertia: float = 0.7
 
+    # --- Formats d'établissement ---------------------------------------------
+    # Low-cost : actes standardisés (protocoles, peu de temps « hors acte »),
+    # achats groupés de consommables, mais offre restreinte aux actes de base.
+    lowcost_time_factor: float = 0.75
+    lowcost_consumables_factor: float = 0.85
+    # CHV : règles de jeu simplifiées (effectif et plateau technique minimum).
+    chv_min_vets: float = 4
+    chv_min_asv: float = 4
+    chv_utility_bonus: float = 0.6  # attractivité (urgences, réputation, référés)
+    chv_extra_fixed_costs_per_quarter: float = 15000.0  # permanence 24 h/24, énergie, garde
+    chv_night_premium_rate: float = 0.15  # majorations nuit / dimanche / jours fériés
+
+    # --- Emprunts bancaires -----------------------------------------------------
+    loan_base_rate_annual: float = 0.045
+    loan_risk_premium_per_leverage: float = 0.01  # +1 point par unité de dette / capitaux propres
+    loan_loss_premium: float = 0.01  # si le dernier trimestre est déficitaire
+    loan_max_leverage: float = 3.0  # dette totale <= 3 x capitaux propres
+    loan_max_amount: float = 400000.0
+    loan_early_repayment_penalty: float = 0.03  # indemnité de remboursement anticipé
+
     @classmethod
     def from_overrides(cls, overrides: dict | None) -> "SimulationParameters":
         """Construit les paramètres en ignorant les clés inconnues."""

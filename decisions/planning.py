@@ -9,7 +9,8 @@ from decimal import Decimal
 
 from django.db import transaction
 
-from clinics.models import StaffMember
+from clinics import formats
+from clinics.models import Clinic, EquipmentType, StaffMember
 
 from .models import PendingDecision
 
@@ -68,7 +69,7 @@ def replace_pending(clinic, quarter: int, kind: str, key: str, value, payload: d
 
 def describe(decision: PendingDecision, params) -> tuple[str, Decimal | None]:
     """Libellé lisible d'une décision et son impact estimé sur la trésorerie du trimestre."""
-    from clinics.models import EquipmentType, ServiceType
+    from clinics.models import ServiceType
     from inventory.models import ProductLine
 
     p = decision.payload
@@ -106,4 +107,56 @@ def describe(decision: PendingDecision, params) -> tuple[str, Decimal | None]:
         return f"Leasing : {eq.name}", -eq.lease_per_quarter
     if k == Kind.RELEASE_EQUIPMENT:
         return "Résiliation d'un leasing (effective au trimestre suivant)", None
+    if k == Kind.SET_FORMAT:
+        target = p.get("format")
+        label = Clinic.Format(target).label if target in Clinic.Format.values else target
+        cost = None
+        if target == Clinic.Format.CHV and not formats.has_chv_fitout(decision.clinic):
+            fitout = EquipmentType.objects.filter(code=formats.CHV_FITOUT_CODE).first()
+            cost = -fitout.purchase_price if fitout else None
+            label += " (travaux d'aménagement)"
+        return f"Changement de format : {label}", cost
+    if k == Kind.BORROW:
+        amount = Decimal(str(p.get("amount", 0)))
+        years = int(p.get("duration_quarters", 0)) / 4
+        return f"Emprunt de {amount:.0f} € sur {years:g} an{'s' if years > 1 else ''} (taux fixé au déblocage)", amount
+    if k == Kind.REPAY_LOAN:
+        from accounting.loans import early_repayment_penalty
+        from accounting.models import Loan
+
+        loan = Loan.objects.filter(pk=p.get("loan_id"), clinic=decision.clinic).first()
+        if loan is None:
+            return "Remboursement anticipé : emprunt inconnu", None
+        penalty = early_repayment_penalty(loan, params)
+        return (
+            f"Remboursement anticipé de l'emprunt de {loan.principal:.0f} € (indemnité {penalty:.0f} €)",
+            -(loan.remaining_principal + penalty),
+        )
     return decision.get_kind_display(), None
+
+
+def planned_format(clinic, quarter: int) -> str:
+    d = pending(clinic, quarter).filter(kind=Kind.SET_FORMAT).order_by("-created_at", "-id").first()
+    return d.payload.get("format") if d else clinic.format
+
+
+def planned_chv_requirements(clinic, quarter: int, params) -> list[tuple[str, bool]]:
+    """Conditions du CHV une fois appliquées les décisions en attente (recrutements, départs, matériel)."""
+    from clinics.services import active_equipment
+
+    decisions = list(pending(clinic, quarter))
+    leaving = {d.payload.get("staff_id") for d in decisions if d.kind == Kind.DISMISS}
+    staying = clinic.staff.filter(left_quarter__isnull=True).exclude(pk__in=leaving)
+    hires = [d.payload.get("role") for d in decisions if d.kind == Kind.HIRE]
+    vets = staying.filter(role=StaffMember.Role.VET).count() + hires.count(StaffMember.Role.VET)
+    asvs = staying.filter(role=StaffMember.Role.ASV).count() + hires.count(StaffMember.Role.ASV)
+
+    released = {d.payload.get("clinic_equipment_id") for d in decisions if d.kind == Kind.RELEASE_EQUIPMENT}
+    owned = set(
+        active_equipment(clinic, quarter)
+        .filter(released_quarter__isnull=True)
+        .exclude(pk__in=released)
+        .values_list("equipment_type__code", flat=True)
+    )
+    owned |= {d.payload.get("equipment") for d in decisions if d.kind == Kind.ACQUIRE_EQUIPMENT}
+    return formats.chv_requirements(vets, asvs, owned, params)

@@ -6,8 +6,8 @@ Valeurs indicatives, à affiner avec l'équipe pédagogique. La commande
 
 from decimal import Decimal as D
 
-from clinics.models import EquipmentType, ServiceType
-from inventory.models import ProductLine
+from clinics.models import Clinic, ClinicService, EquipmentType, ServiceType
+from inventory.models import ProductLine, StockItem
 
 EQUIPMENT = [
     # code, nom, prix d'achat, leasing / trimestre, durée (trimestres)
@@ -15,6 +15,17 @@ EQUIPMENT = [
     ("lab-hemato", "Analyseur d'hématologie", D("12000"), D("900"), 20),
     ("radio-numerique", "Radiographie numérique", D("45000"), D("3200"), 28),
     ("echographe", "Échographe", D("30000"), D("2100"), 20),
+]
+
+# Immobilisations hors catalogue : code, nom, coût, compte, durée (trimestres)
+FIXED_ASSETS = [
+    (
+        "amenagement-chv",
+        "Aménagements CHV (salle d'urgence, chenil d'hospitalisation, bloc)",
+        D("60000"),
+        "2135",
+        40,
+    ),
 ]
 
 SERVICES = [
@@ -27,6 +38,13 @@ SERVICES = [
     ("hematologie", "Numération formule sanguine", D("45"), 0.06, 5, 10, D("8"), "lab-hemato"),
     ("radiographie", "Radiographie", D("90"), 0.05, 15, 15, D("5"), "radio-numerique"),
     ("echographie", "Échographie", D("100"), 0.03, 30, 5, D("3"), "echographe"),
+]
+
+# Prestations réservées aux CHV : mêmes colonnes, matériel requis remplacé par le format.
+CHV_SERVICES = [
+    ("urgences", "Urgences et garde (nuit, week-end)", D("140"), 0.04, 40, 30, D("15")),
+    ("hospitalisation", "Hospitalisation (journée)", D("95"), 0.05, 15, 60, D("20")),
+    ("chirurgie-specialisee", "Chirurgie spécialisée (orthopédie…)", D("950"), 0.006, 120, 120, D("150")),
 ]
 
 PRODUCTS = [
@@ -46,7 +64,20 @@ def seed_catalog():
             code=code,
             defaults={"name": name, "purchase_price": price, "lease_per_quarter": lease, "useful_life_quarters": life},
         )
-    for code, name, price, freq, vet, asv, cons, eq in SERVICES:
+    for code, name, price, account, life in FIXED_ASSETS:
+        EquipmentType.objects.update_or_create(
+            code=code,
+            defaults={
+                "name": name,
+                "purchase_price": price,
+                "lease_per_quarter": D("0"),
+                "useful_life_quarters": life,
+                "asset_account": account,
+                "purchasable": False,
+            },
+        )
+    rows = [(*row, "") for row in SERVICES] + [(*row, None, "chv") for row in CHV_SERVICES]
+    for code, name, price, freq, vet, asv, cons, eq, required_format in rows:
         ServiceType.objects.update_or_create(
             code=code,
             defaults={
@@ -57,6 +88,7 @@ def seed_catalog():
                 "asv_minutes": asv,
                 "consumables_cost": cons,
                 "required_equipment": equipment.get(eq),
+                "required_format": required_format,
             },
         )
     for code, name, species, cost, price, units in PRODUCTS:
@@ -70,3 +102,17 @@ def seed_catalog():
                 "units_per_animal": units,
             },
         )
+
+    ensure_clinic_offers()
+
+
+def ensure_clinic_offers():
+    """Ajoute aux cliniques existantes les prestations et gammes apparues dans le catalogue.
+
+    Nouvelles lignes inactives (prestations) ou sans réassort (gammes), au prix de référence.
+    """
+    for clinic in Clinic.objects.all():
+        for st in ServiceType.objects.exclude(pk__in=clinic.services.values("service_type")):
+            ClinicService.objects.create(clinic=clinic, service_type=st, price=st.reference_price, active=False)
+        for pl in ProductLine.objects.exclude(pk__in=clinic.stock.values("product_line")):
+            StockItem.objects.create(clinic=clinic, product_line=pl, retail_price=pl.recommended_price)

@@ -12,6 +12,7 @@ clinique ``c`` :
               - beta_price      * (indice_prix(c) - 1) * sensibilité_prix(z)
               + beta_offer      * (ratio_offre(c) - 1)
               + beta_reputation * (réputation(c) - 0.5)
+              + bonus_format(c)                       (CHV)
 
     part(z, c) = exp(U(z, c)) / (exp(U0) + somme_c' exp(U(z, c')))
 
@@ -44,6 +45,7 @@ class ClinicOffer:
     price_index: float  # 1.0 = prix de référence du marché
     offer_ratio: float  # 0..1, part pondérée des services proposés
     reputation: float  # 0..1
+    bonus: float = 0.0  # attractivité propre au format (CHV)
 
 
 def distance_km(ax: int, ay: int, bx: int, by: int, cell_size_km: float) -> float:
@@ -58,6 +60,7 @@ def utility(zone: Zone, clinic: ClinicOffer, p: SimulationParameters) -> float:
         - p.beta_price * (clinic.price_index - 1.0) * zone.price_sensitivity
         + p.beta_offer * (clinic.offer_ratio - 1.0)
         + p.beta_reputation * (clinic.reputation - 0.5)
+        + clinic.bonus
     )
 
 

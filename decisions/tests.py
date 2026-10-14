@@ -164,6 +164,77 @@ class DecisionBoardTests(TestCase):
         self.assertContains(response, "Trimestre 2/")
         self.assertContains(response, "Appliquée")
 
+    # --- Format ---------------------------------------------------------------------
+
+    def test_board_shows_positioning_and_financing(self):
+        response = self.client.get(self.url)
+        self.assertContains(response, "Positionnement de la clinique")
+        self.assertContains(response, "Centre hospitalier vétérinaire (CHV)")
+        self.assertContains(response, "✗ Au moins 4 vétérinaires (actuellement 1)")
+        self.assertContains(response, "Financement")
+        self.assertContains(response, "Capacité d'emprunt restante")
+
+    def test_chv_checklist_reflects_pending_decisions(self):
+        for _ in range(3):
+            self.post(action="hire", role="vet", name="Véto", gross_monthly_salary="4000")
+        self.post(action="acquire", equipment="echographe", mode="lease")
+        response = self.client.get(self.url)
+        self.assertContains(response, "✓ Au moins 4 vétérinaires (actuellement 4)")
+        self.assertContains(response, "✓ Échographe")
+        self.assertContains(response, "✗ Radiographie numérique")
+
+    def test_set_format_replaces_and_cancels(self):
+        self.post(action="format", format="low_cost")
+        self.post(action="format", format="chv")
+        self.assertEqual(self.pending(Kind.SET_FORMAT).get().payload["format"], "chv")
+        self.post(action="format", format="standard")  # retour au format actuel
+        self.assertFalse(self.pending(Kind.SET_FORMAT).exists())
+
+    def test_chv_switch_shows_fitout_cost(self):
+        self.post(action="format", format="chv")
+        self.assertContains(self.client.get(self.url), "-60000 €")
+
+    def test_low_cost_services_marked_unavailable(self):
+        self.post(action="format", format="low_cost")
+        resolve_quarter(self.server)
+        response = self.client.get(self.url)
+        self.assertContains(response, "hors offre low-cost")
+
+    # --- Emprunts --------------------------------------------------------------------
+
+    def test_borrow_within_capacity(self):
+        self.post(action="borrow", amount="100000", duration_quarters="20")
+        decision = self.pending(Kind.BORROW).get()
+        self.assertEqual(decision.payload, {"amount": "100000", "duration_quarters": 20})
+        self.assertContains(self.client.get(self.url), "100000 €")
+
+    def test_borrow_beyond_capacity_refused_immediately(self):
+        response = self.post(action="borrow", amount="300000", duration_quarters="20")
+        self.assertContains(response, "La banque refuserait ce prêt")
+        self.assertFalse(self.pending().exists())
+
+    def test_pending_borrowing_reduces_capacity(self):
+        self.post(action="borrow", amount="200000", duration_quarters="20")
+        response = self.post(action="borrow", amount="100000", duration_quarters="20")
+        self.assertContains(response, "La banque refuserait ce prêt")
+        self.assertEqual(self.pending(Kind.BORROW).count(), 1)
+
+    def test_repay_loan(self):
+        self.post(action="borrow", amount="50000", duration_quarters="20")
+        resolve_quarter(self.server)
+        loan = self.clinic.loans.get()
+        response = self.client.get(self.url)
+        self.assertContains(response, "1500 € d'indemnité")
+        self.post(action="repay", object_id=loan.pk)
+        self.assertEqual(self.pending(Kind.REPAY_LOAN).get().payload["loan_id"], loan.pk)
+
+    def test_cannot_repay_rival_loan(self):
+        from accounting.loans import borrow
+
+        loan = borrow(self.rival_clinic, Decimal("20000"), 8, self.server.get_parameters())
+        self.post(action="repay", object_id=loan.pk)
+        self.assertFalse(self.pending().exists())
+
     def test_finished_server_is_read_only(self):
         self.server.status = GameServer.Status.FINISHED
         self.server.save()

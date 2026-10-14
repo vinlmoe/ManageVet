@@ -72,5 +72,8 @@ def clinic_dashboard(request, pk):
             "decisions": clinic.decisions.order_by("-created_at")[:20],
             "entries": entries,
             "bank_balance": account_balance(clinic, pcg.BANK),
+            "loans": [
+                (loan, loan.annual_rate * 100) for loan in clinic.loans.filter(status="active")
+            ],
         },
     )

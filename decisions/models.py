@@ -16,6 +16,9 @@ class PendingDecision(models.Model):
         DISMISS = "dismiss", "Se séparer d'un salarié"
         ACQUIRE_EQUIPMENT = "acquire_equipment", "Acheter / louer du matériel"
         RELEASE_EQUIPMENT = "release_equipment", "Résilier un leasing"
+        SET_FORMAT = "set_format", "Changer de format (standard / low-cost / CHV)"
+        BORROW = "borrow", "Emprunter"
+        REPAY_LOAN = "repay_loan", "Rembourser un emprunt par anticipation"
 
     class Status(models.TextChoices):
         PENDING = "pending", "En attente"

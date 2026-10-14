@@ -42,6 +42,39 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
 
 {# ------------------------------------------------------------------ #}
 <section class="card">
+  <h2>Positionnement de la clinique</h2>
+  <p>Format actuel : <strong>{{ clinic.get_format_display }}</strong>
+    {% if target_format != clinic.format %} — <span class="tag">changement programmé</span>{% endif %}</p>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="format">
+    {{ format_form.non_field_errors }}
+    <div class="format-options">
+    {% for value, label, description in format_options %}
+      <label class="format-option{% if value == target_format %} selected{% endif %}">
+        <input type="radio" name="format" value="{{ value }}"{% if value == target_format %} checked{% endif %}{% if not can_edit %} disabled{% endif %}>
+        <strong>{{ label }}</strong>
+        <span class="muted">{{ description }}</span>
+        {% if value == "low_cost" %}
+        <span class="muted">Temps par acte ×{{ params.lowcost_time_factor|floatformat:2 }}, consommables ×{{ params.lowcost_consumables_factor|floatformat:2 }}.</span>
+        {% elif value == "chv" %}
+        <span class="muted">Surcoûts : {{ chv_extra_costs|floatformat:0 }} € / trimestre de permanence des soins
+          et {% widthratio params.chv_night_premium_rate 1 100 %} % de majorations sur les salaires.
+          {% if chv_fitout_cost %}Travaux d'aménagement : {{ chv_fitout_cost|floatformat:0 }} € (immobilisés, amortis sur 10 ans).{% endif %}</span>
+        <ul class="checklist">
+          {% for requirement, ok in chv_requirements %}<li class="{% if ok %}pos{% else %}neg{% endif %}">{% if ok %}✓{% else %}✗{% endif %} {{ requirement }}</li>{% endfor %}
+        </ul>
+        <span class="muted">Conditions évaluées après vos recrutements, départs et acquisitions en attente.
+          Elles sont revérifiées à chaque trimestre : un CHV qui ne les remplit plus perd son statut.</span>
+        {% endif %}
+      </label>
+    {% endfor %}
+    </div>
+    {% if can_edit %}<button>Enregistrer le format</button>{% endif %}
+  </form>
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
   <h2>Tarifs et offre de soins</h2>
   <p class="muted">Indice de prix et étendue de l'offre pèsent sur le choix de la patientèle ; chaque acte a aussi sa propre élasticité au prix.</p>
   <form method="post">
@@ -52,7 +85,7 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
       {% for cs, price, active in services_form.bound_rows %}
       <tr>
         <td>{{ cs.service_type.name }}
-          {% if cs.service_type.required_equipment and active.field.disabled %}<br><span class="tag">nécessite : {{ cs.service_type.required_equipment.name }}</span>{% endif %}</td>
+          {% if cs.unavailable %}<br><span class="tag">{{ cs.unavailable }}</span>{% endif %}</td>
         <td class="muted">{{ cs.service_type.reference_price|floatformat:0 }} €</td>
         <td>{{ price }} {{ price.errors }}</td>
         <td>{{ active }}</td>
@@ -156,6 +189,78 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
     </tr>
     {% endfor %}
   </table></div>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ #}
+<section class="card">
+  <h2>Financement</h2>
+  <table>
+    <tr><td>Capitaux propres (capital + résultats cumulés)</td><td class="{% if equity < 0 %}neg{% endif %}">{{ equity|floatformat:0 }} €</td></tr>
+    <tr><td>Emprunts restant dus</td><td>{{ debt|floatformat:0 }} €</td></tr>
+    <tr><td>Capacité d'emprunt restante{% if pending_borrowed %} (après demandes en attente){% endif %}</td><td><strong>{{ capacity|floatformat:0 }} €</strong></td></tr>
+  </table>
+  <p class="muted">La banque prête jusqu'à {{ params.loan_max_leverage|floatformat:0 }} × vos capitaux propres
+    (plafond {{ params.loan_max_amount|floatformat:0 }} €). Taux = {{ rates.base|floatformat:2 }} %
+    + {{ rates.premium|floatformat:2 }} point par unité d'endettement (dette / capitaux propres)
+    {% if last_loss %}+ {{ rates.loss|floatformat:2 }} point car le dernier trimestre est déficitaire{% endif %}.
+    Échéances trimestrielles constantes à partir du trimestre suivant.</p>
+
+  {% if loans %}
+  <h3>Emprunts en cours</h3>
+  <div class="table-scroll"><table>
+    <tr><th>Capital emprunté</th><th>Taux</th><th>Échéance / trim.</th><th>Restant dû</th><th>Échéances</th><th></th></tr>
+    {% for loan, repaying, penalty, rate_pct in loans %}
+    <tr>
+      <td>{{ loan.principal|floatformat:0 }} €</td>
+      <td>{{ rate_pct|floatformat:2 }} %</td>
+      <td>{{ loan.quarterly_payment|floatformat:0 }} €</td>
+      <td>{{ loan.remaining_principal|floatformat:0 }} €</td>
+      <td>{{ loan.installments_paid }}/{{ loan.duration_quarters }}</td>
+      <td>{% if repaying %}<span class="tag">remboursement programmé</span>
+          {% elif can_edit %}<form method="post">{% csrf_token %}
+            <input type="hidden" name="action" value="repay"><input type="hidden" name="object_id" value="{{ loan.pk }}">
+            <button class="danger" title="Indemnité de remboursement anticipé : {{ penalty|floatformat:0 }} €">Rembourser ({{ penalty|floatformat:0 }} € d'indemnité)</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+
+  {% if can_edit %}
+  <h3>Demander un emprunt</h3>
+  <form method="post" id="borrow-form"
+        data-equity="{{ equity|stringformat:'s' }}" data-debt="{{ debt|stringformat:'s' }}" data-pending="{{ pending_borrowed|stringformat:'s' }}"
+        data-base="{{ params.loan_base_rate_annual|stringformat:'s' }}" data-premium="{{ params.loan_risk_premium_per_leverage|stringformat:'s' }}"
+        data-loss="{% if last_loss %}{{ params.loan_loss_premium|stringformat:'s' }}{% else %}0{% endif %}">
+    {% csrf_token %}<input type="hidden" name="action" value="borrow">
+    {{ borrow_form.non_field_errors }}
+    {% for field in borrow_form %}<label>{{ field.label }} {{ field }}</label> {{ field.errors }} {% endfor %}
+    <button>Demander ce prêt</button>
+    <p class="muted" id="borrow-simulation"></p>
+  </form>
+  <script>
+    (function () {
+      const form = document.getElementById("borrow-form");
+      const d = form.dataset;
+      const out = document.getElementById("borrow-simulation");
+      const pct = new Intl.NumberFormat("fr-FR", { style: "percent", minimumFractionDigits: 2 });
+      const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+      function simulate() {
+        const amount = parseFloat(form.amount.value);
+        const n = parseInt(form.duration_quarters.value, 10);
+        const equity = parseFloat(d.equity);
+        if (!amount || !n || equity <= 0) { out.textContent = ""; return; }
+        const leverage = (parseFloat(d.debt) + parseFloat(d.pending) + amount) / equity;
+        const rate = parseFloat(d.base) + parseFloat(d.premium) * leverage + parseFloat(d.loss);
+        const r = rate / 4;
+        const payment = amount * r / (1 - Math.pow(1 + r, -n));
+        out.textContent = "Simulation : taux " + pct.format(rate) + ", échéance " + eur.format(payment) +
+          " par trimestre, coût total du crédit " + eur.format(payment * n - amount) + ".";
+      }
+      form.addEventListener("input", simulate);
+      simulate();
+    })();
+  </script>
   {% endif %}
 </section>
 

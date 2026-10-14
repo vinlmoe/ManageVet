@@ -5,18 +5,24 @@ résolution hebdomadaire. Un même objet (prestation, gamme) ne porte qu'une
 décision en attente à la fois : une nouvelle saisie remplace la précédente.
 """
 
+from decimal import Decimal
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
 
+from accounting import loans
+from accounting.models import Loan
+from accounting.services import equity, outstanding_debt
+from clinics import formats
 from clinics.access import get_clinic_for_user
-from clinics.models import EquipmentType
+from clinics.models import Clinic, EquipmentType
 from clinics.services import active_equipment
 from game.models import GameServer
 
 from . import planning
-from .forms import AcquireForm, HireForm, IdForm, ProductsForm, ServicesForm
+from .forms import AcquireForm, BorrowForm, FormatForm, HireForm, IdForm, ProductsForm, ServicesForm
 from .models import PendingDecision
 
 Kind = PendingDecision.Kind
@@ -25,15 +31,14 @@ Kind = PendingDecision.Kind
 def _services_form(clinic, quarter, data=None):
     owned = set(active_equipment(clinic, quarter).values_list("equipment_type_id", flat=True))
     clinic_services = list(clinic.services.select_related("service_type__required_equipment").order_by("service_type__id"))
-    operable = {
-        cs.service_type.code
-        for cs in clinic_services
-        if cs.service_type.required_equipment_id is None or cs.service_type.required_equipment_id in owned
-    }
-    form = ServicesForm(
-        data, clinic_services=clinic_services, plan=planning.planned_services(clinic, quarter), operable_codes=operable
+    for cs in clinic_services:
+        cs.unavailable = formats.unavailability_reason(clinic.format, cs.service_type, owned)
+    return ServicesForm(
+        data,
+        clinic_services=clinic_services,
+        plan=planning.planned_services(clinic, quarter),
+        operable_codes={cs.service_type.code for cs in clinic_services if cs.unavailable is None},
     )
-    return form
 
 
 def _products_form(clinic, quarter, data=None):
@@ -77,8 +82,17 @@ def decision_board(request, pk):
     pending_dismiss = {d.payload.get("staff_id") for d in pending if d.kind == Kind.DISMISS}
     pending_acquire = {d.payload.get("equipment") for d in pending if d.kind == Kind.ACQUIRE_EQUIPMENT}
     pending_release = {d.payload.get("clinic_equipment_id") for d in pending if d.kind == Kind.RELEASE_EQUIPMENT}
-    owned = list(active_equipment(clinic, quarter).select_related("equipment_type"))
+    owned = list(active_equipment(clinic, quarter).select_related("equipment_type").filter(equipment_type__purchasable=True))
     owned_codes = {e.equipment_type.code for e in owned}
+    target_format = planning.planned_format(clinic, quarter)
+    pending_borrowed = sum(
+        (Decimal(str(d.payload.get("amount", 0))) for d in pending if d.kind == Kind.BORROW), Decimal("0")
+    )
+    pending_repay = {d.payload.get("loan_id") for d in pending if d.kind == Kind.REPAY_LOAN}
+    clinic_equity = equity(clinic)
+    debt = outstanding_debt(clinic)
+    last_report = clinic.reports.filter(quarter=quarter - 1).first()
+    fitout = EquipmentType.objects.filter(code=formats.CHV_FITOUT_CODE).first()
 
     context = {
         "clinic": clinic,
@@ -101,6 +115,32 @@ def decision_board(request, pk):
         "pending_rows": pending_rows,
         "pending_cash_impact": sum((impact for _, _, impact in pending_rows if impact is not None), 0),
         "history": clinic.decisions.exclude(status=PendingDecision.Status.PENDING).order_by("-quarter", "-id")[:15],
+        # Positionnement
+        "format_form": forms.get("format") or FormatForm(initial={"format": target_format}),
+        "target_format": target_format,
+        "format_options": [
+            (value, label, formats.DESCRIPTIONS[value]) for value, label in Clinic.Format.choices
+        ],
+        "chv_requirements": planning.planned_chv_requirements(clinic, quarter, params),
+        "chv_fitout_cost": None if formats.has_chv_fitout(clinic) or fitout is None else fitout.purchase_price,
+        "chv_extra_costs": params.chv_extra_fixed_costs_per_quarter,
+        # Financement
+        "borrow_form": forms.get("borrow") or BorrowForm(),
+        "loans": [
+            (loan, loan.pk in pending_repay, loans.early_repayment_penalty(loan, params), loan.annual_rate * 100)
+            for loan in clinic.loans.filter(status=Loan.Status.ACTIVE)
+        ],
+        "rates": {
+            "base": params.loan_base_rate_annual * 100,
+            "premium": params.loan_risk_premium_per_leverage * 100,
+            "loss": params.loan_loss_premium * 100,
+        },
+        "equity": clinic_equity,
+        "debt": debt,
+        "capacity": max(Decimal("0"), loans.borrowing_capacity(clinic, params) - pending_borrowed),
+        "pending_borrowed": pending_borrowed,
+        "last_loss": bool(last_report and last_report.net_result < 0),
+        "durations": loans.DURATIONS,
     }
     return render(request, "decisions/board.html", context)
 
@@ -220,6 +260,65 @@ def _release(request, clinic, quarter):
     return None
 
 
+def _set_format(request, clinic, quarter):
+    form = FormatForm(request.POST)
+    if not form.is_valid():
+        return form
+    target = form.cleaned_data["format"]
+    label = Clinic.Format(target).label
+    if target == planning.planned_format(clinic, quarter):
+        messages.info(request, f"Format inchangé : {label}.")
+        return None
+    # Une seule décision de format en attente : toute nouvelle saisie remplace la précédente.
+    for d in planning.pending(clinic, quarter).filter(kind=Kind.SET_FORMAT):
+        d.status = PendingDecision.Status.CANCELLED
+        d.message = "Remplacée par une saisie plus récente."
+        d.save(update_fields=["status", "message"])
+    if target != clinic.format:
+        PendingDecision.objects.create(clinic=clinic, quarter=quarter, kind=Kind.SET_FORMAT, payload={"format": target})
+        messages.success(request, f"Passage au format « {label} » programmé (appliqué après vos autres décisions).")
+    else:
+        messages.success(request, "Changement de format annulé.")
+    return None
+
+
+def _borrow(request, clinic, quarter):
+    form = BorrowForm(request.POST)
+    if not form.is_valid():
+        return form
+    amount, duration = form.cleaned_data["amount"], form.cleaned_data["duration_quarters"]
+    params = clinic.server.get_parameters()
+    pending_borrowed = sum(
+        (Decimal(str(d.payload.get("amount", 0))) for d in planning.pending(clinic, quarter).filter(kind=Kind.BORROW)),
+        Decimal("0"),
+    )
+    offer = loans.quote(clinic, amount + pending_borrowed, duration, params, quarter)
+    if not offer.accepted:
+        form.add_error(None, f"La banque refuserait ce prêt : {offer.reason}")
+        return form
+    PendingDecision.objects.create(
+        clinic=clinic, quarter=quarter, kind=Kind.BORROW, payload={"amount": str(amount), "duration_quarters": duration}
+    )
+    rate = f"{offer.annual_rate * 100:.2f}".replace(".", ",")
+    messages.success(
+        request,
+        f"Demande d'emprunt de {amount:.0f} € enregistrée. Taux indicatif {rate} %, "
+        "confirmé au déblocage selon votre situation à la résolution.",
+    )
+    return None
+
+
+def _repay(request, clinic, quarter):
+    loan_id = _object_id(request)
+    loan = clinic.loans.filter(pk=loan_id, status=Loan.Status.ACTIVE).first() if loan_id else None
+    if loan is None:
+        messages.error(request, "Emprunt introuvable.")
+    else:
+        planning.replace_pending(clinic, quarter, Kind.REPAY_LOAN, "loan_id", loan.pk, {"loan_id": loan.pk})
+        messages.success(request, "Remboursement anticipé programmé.")
+    return None
+
+
 def _cancel(request, clinic, quarter):
     decision_id = _object_id(request)
     decision = planning.pending(clinic, quarter).filter(pk=decision_id).first() if decision_id else None
@@ -241,4 +340,7 @@ ACTIONS = {
     "acquire": _acquire,
     "release": _release,
     "cancel": _cancel,
+    "format": _set_format,
+    "borrow": _borrow,
+    "repay": _repay,
 }

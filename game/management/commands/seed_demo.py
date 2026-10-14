@@ -13,19 +13,23 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from accounting.loans import borrow
 from clinics.services import acquire_equipment, create_clinic, hire
 from decisions.models import PendingDecision
 from game.catalog import seed_catalog
 from game.map import generate_zones
 from game.models import GameServer
 
+CHV_EQUIPMENT = [("radio-numerique", "purchase"), ("echographe", "purchase"), ("lab-biochimie", "lease"), ("lab-hemato", "lease")]
+
 STRATEGIES = [
-    # nom, multiplicateur de prix, matériel, véto en plus, ASV en plus, réassort (en % de la demande estimée)
-    ("Low-cost", 0.80, [], 1, 0, 0.8),
-    ("Premium équipée", 1.25, [("lab-biochimie", "purchase"), ("radio-numerique", "lease")], 1, 1, 1.2),
-    ("Équilibrée", 1.00, [("lab-biochimie", "lease")], 1, 1, 1.0),
-    ("Prudente", 1.05, [], 0, 0, 0.6),
-    ("Plateau technique", 1.10, [("lab-hemato", "lease"), ("echographe", "lease"), ("lab-biochimie", "lease")], 2, 1, 1.0),
+    # nom, format, multiplicateur de prix, matériel, véto en plus, ASV en plus,
+    # réassort (en % de la demande estimée), emprunt (montant, trimestres) ou None
+    ("Low-cost", "low_cost", 0.80, [], 1, 0, 0.8, None),
+    ("Premium équipée", "standard", 1.25, [("lab-biochimie", "purchase"), ("radio-numerique", "lease")], 1, 1, 1.2, None),
+    ("Équilibrée", "standard", 1.00, [("lab-biochimie", "lease")], 1, 1, 1.0, None),
+    ("Prudente", "standard", 1.05, [], 0, 0, 0.6, None),
+    ("CHV", "chv", 1.15, CHV_EQUIPMENT, 3, 3, 1.0, (150000, 28)),
 ]
 
 
@@ -68,15 +72,27 @@ class Command(BaseCommand):
         User = get_user_model()
 
         for i, (x, y) in enumerate(cells, start=1):
-            strategy, price_mult, equipment, extra_vets, extra_asv, stock_factor = STRATEGIES[(i - 1) % len(STRATEGIES)]
+            strategy, clinic_format, price_mult, equipment, extra_vets, extra_asv, stock_factor, loan = STRATEGIES[
+                (i - 1) % len(STRATEGIES)
+            ]
             owner, _ = User.objects.get_or_create(username=f"bot{server.pk}_{i}")
             clinic = create_clinic(server, owner, f"Clinique {i} ({strategy})", x, y)
+            if loan:
+                # L'emprunt est débloqué avant les achats pour financer le plateau technique.
+                borrow(clinic, Decimal(loan[0]), loan[1], server.get_parameters())
             for code, mode in equipment:
                 acquire_equipment(clinic, code, mode)
             for _ in range(extra_vets):
                 hire(clinic, "vet", "Vétérinaire salarié", Decimal("3800"))
             for _ in range(extra_asv):
                 hire(clinic, "asv", "ASV", Decimal("1900"))
+            if clinic_format != "standard":
+                PendingDecision.objects.create(
+                    clinic=clinic,
+                    quarter=server.current_quarter,
+                    kind=PendingDecision.Kind.SET_FORMAT,
+                    payload={"format": clinic_format},
+                )
             # Les prix et le stock passent par des décisions : on exerce le même chemin qu'un joueur.
             for cs in clinic.services.select_related("service_type"):
                 PendingDecision.objects.create(
