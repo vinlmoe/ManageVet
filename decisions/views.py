@@ -15,7 +15,7 @@ from django.shortcuts import redirect, render
 from accounting import loans
 from accounting.models import Loan
 from accounting.services import equity, outstanding_debt
-from clinics import ccn, formats
+from clinics import ccn, formats, recruitment
 from clinics.access import get_clinic_for_user
 from clinics.models import Clinic, EquipmentType
 from clinics.services import active_equipment
@@ -109,6 +109,8 @@ def decision_board(request, pk):
             for role, levels in ccn.LEVELS.items()
             for level in levels
         },
+        "recruitment_data": _recruitment_data(clinic, params),
+        "recruitment_enabled": bool(params.recruitment_enabled),
         "staff": [
             (m, m.pk in pending_dismiss, ccn.productivity(m.role, m.level, params))
             for m in clinic.staff.filter(left_quarter__isnull=True).order_by("role", "specialty", "id")
@@ -156,6 +158,30 @@ def decision_board(request, pk):
         "durations": loans.DURATIONS,
     }
     return render(request, "decisions/board.html", context)
+
+
+def _recruitment_data(clinic, params) -> dict:
+    """Éléments du calcul des chances de recrutement, pour la simulation dans le navigateur."""
+    factors = recruitment.clinic_factors(clinic, params)
+    market = {}
+    for role, levels in ccn.LEVELS.items():
+        for level in levels:
+            market[f"{role}-{level}"] = str(recruitment.market_salary(role, level, "", params))
+    market["specialist-5"] = str(recruitment.market_salary("vet", 5, "chirurgie", params))
+    return {
+        "enabled": bool(params.recruitment_enabled),
+        "market": market,
+        "base": {kind: getattr(params, f"recruitment_base_{kind}") for kind in ("vet", "specialist", "asv")},
+        "fee": {kind: getattr(params, f"recruitment_fee_{kind}") for kind in ("vet", "specialist", "asv")},
+        "pool": {kind: getattr(params, f"candidates_{kind}_per_quarter") for kind in ("vet", "specialist", "asv")},
+        "shortage": params.recruitment_shortage,
+        "elasticity": params.recruitment_salary_elasticity,
+        "cap": params.recruitment_salary_factor_cap,
+        "location": factors["location"],
+        "density": factors["density"],
+        "reputation": factors["reputation"],
+        "format": factors["format"],
+    }
 
 
 # --- Actions ------------------------------------------------------------------

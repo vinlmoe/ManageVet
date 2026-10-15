@@ -21,6 +21,7 @@ CONSUMABLES = "6022"  # Fournitures consommables
 LEASING = "6122"  # Redevances de crédit-bail mobilier
 RENT = "6132"  # Locations immobilières
 FEES = "6226"  # Honoraires
+RECRUITMENT = "6231"  # Annonces et insertions (frais de recrutement)
 OTHER_EXTERNAL = "628"  # Divers (énergie, assurances, télécom… regroupés)
 SALARIES = "6411"  # Salaires, appointements
 SEVERANCE = "6414"  # Indemnités et avantages divers
@@ -48,6 +49,7 @@ LABELS = {
     LEASING: "Crédit-bail mobilier",
     RENT: "Loyer",
     FEES: "Honoraires",
+    RECRUITMENT: "Annonces et insertions (recrutement)",
     OTHER_EXTERNAL: "Autres charges externes",
     SALARIES: "Salaires",
     SEVERANCE: "Indemnités de rupture",

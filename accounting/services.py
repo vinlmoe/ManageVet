@@ -77,7 +77,7 @@ def income_statement(clinic, quarter: int) -> dict[str, Decimal]:
         "purchases_goods": charge(pcg.PURCHASES_GOODS),
         "stock_variation": charge(pcg.STOCK_VARIATION),
         "consumables": charge(pcg.CONSUMABLES),
-        "external_charges": charge(pcg.LEASING, pcg.RENT, pcg.FEES, pcg.OTHER_EXTERNAL),
+        "external_charges": charge(pcg.LEASING, pcg.RENT, pcg.FEES, pcg.RECRUITMENT, pcg.OTHER_EXTERNAL),
         "payroll": charge(pcg.SALARIES, pcg.SEVERANCE, pcg.SOCIAL_CHARGES),
         "depreciation": charge(pcg.DEPRECIATION_EXPENSE),
         "financial_charges": charge(pcg.LOAN_INTEREST, pcg.BANK_INTEREST, pcg.OTHER_FINANCIAL),

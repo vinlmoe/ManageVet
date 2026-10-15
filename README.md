@@ -51,6 +51,12 @@ python manage.py runserver                        # http://127.0.0.1:8000/
   soins (réputation) et qualification (seules les ASV titrées comptent pour
   le CHV). Un spécialiste ne réalise que les actes de sa discipline mais
   reçoit les cas référés de toute la région ;
+- **difficulté de recrutement** : chaque embauche est une tentative dont les
+  chances dépendent du profil (les spécialistes sont rares), du salaire
+  proposé par rapport au marché, de la densité de la zone (la campagne
+  recrute mal), de la réputation et du format ; le vivier de candidats est
+  limité chaque trimestre et partagé entre les cliniques, et les frais
+  d'annonce sont dus même en cas d'échec ;
 - achat ou leasing de matériel, résiliation d'un leasing ;
 - **positionnement** : clinique standard, **low-cost** (actes de base,
   standardisés, moins chers à produire) ou **CHV**. Pour le CHV, conditions
@@ -86,6 +92,8 @@ python manage.py seed_demo --name "Charges sociales +" --param employer_contribu
 python manage.py seed_demo --name "Taux à 7 %" --param loan_base_rate_annual=0.07
 python manage.py seed_demo --name "Deux spécialistes exigés" --param chv_min_specialists=2
 python manage.py seed_demo --name "Débutants très productifs" --param vet_productivity_level2=0.95
+python manage.py seed_demo --name "Pénurie de vétérinaires" --param recruitment_shortage=0.5 --param candidates_vet_per_quarter=2
+python manage.py seed_demo --name "Déserts vétérinaires" --param recruitment_rural_penalty=0.7
 python manage.py seed_demo --name "Revalorisation du point" --param ccn_point_value=18.50
 ```
 

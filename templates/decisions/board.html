@@ -167,7 +167,21 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
     {% for field in hire_form %}<label>{{ field.label }} {{ field }}</label> {{ field.errors }} {% endfor %}
     <button>Programmer le recrutement</button>
     <p class="muted" id="hire-minimum"></p>
+    {% if recruitment_enabled %}<p id="hire-odds"></p>{% endif %}
   </form>
+  {% if recruitment_enabled %}
+  <details class="muted"><summary>Marché de l'emploi : comment sont calculées vos chances ?</summary>
+    <p>Recruter n'est pas garanti. Chances = base du profil × facteur salaire (salaire proposé / salaire du marché,
+      à la puissance {{ params.recruitment_salary_elasticity|floatformat:0 }}) × attractivité du lieu
+      (×{{ recruitment_data.location|floatformat:2 }} ici) × réputation (×{{ recruitment_data.reputation|floatformat:2 }})
+      {% if clinic.format == "chv" %}× effet CHV (spécialistes ×{{ recruitment_data.format.specialist|floatformat:2 }}, généralistes ×{{ recruitment_data.format.vet|floatformat:2 }}){% endif %}.
+      Chaque trimestre, le marché ne compte que {{ params.candidates_vet_per_quarter|floatformat:0 }} vétérinaires généralistes,
+      {{ params.candidates_asv_per_quarter|floatformat:0 }} auxiliaires et {{ params.candidates_specialist_per_quarter|floatformat:0 }}
+      spécialiste(s) par discipline pour toute la partie : les offres les plus attractives des cliniques concurrentes passent avant.
+      Les frais d'annonce ou de cabinet sont dus même en cas d'échec.</p>
+  </details>
+  {{ recruitment_data|json_script:"recruitment-data" }}
+  {% endif %}
   {{ salary_minimums|json_script:"salary-minimums" }}
   <script>
     (function () {
@@ -197,16 +211,45 @@ lors de la résolution du trimestre. Vous pouvez les modifier ou les annuler jus
         option.selected = true;
         const minimum = minimums[role + "-" + form.level.value];
         out.textContent = minimum ? "Minimum conventionnel : " + eur.format(minimum) + " brut par mois." : "";
-        // Le salaire suit le minimum de l'échelon tant que le joueur n'a pas saisi son propre montant.
+        // Le salaire suit une proposition (salaire du marché, à défaut le minimum de l'échelon)
+        // tant que le joueur n'a pas saisi son propre montant.
         const salary = form.gross_monthly_salary;
+        const suggestion = marketSalary() || parseFloat(minimum);
         if (minimum && (!salary.value || salary.value === lastSuggested || parseFloat(salary.value) < parseFloat(minimum))) {
-          salary.value = lastSuggested = String(Math.ceil(parseFloat(minimum)));
+          salary.value = lastSuggested = String(Math.ceil(suggestion));
         }
+        showOdds();
+      }
+      // Chances de recrutement : même formule que clinics/recruitment.py.
+      const odds = document.getElementById("hire-odds");
+      const dataNode = document.getElementById("recruitment-data");
+      const data = dataNode ? JSON.parse(dataNode.textContent) : null;
+      function profileKind() {
+        return form.role.value === "asv" ? "asv" : (form.specialty.value ? "specialist" : "vet");
+      }
+      function marketSalary() {
+        if (!data) return null;
+        const kind = profileKind();
+        return parseFloat(data.market[kind === "specialist" ? "specialist-5" : form.role.value + "-" + form.level.value]);
+      }
+      function showOdds() {
+        if (!odds || !data) return;
+        const kind = profileKind();
+        const market = marketSalary();
+        const salary = parseFloat(form.gross_monthly_salary.value) || 0;
+        const salaryFactor = Math.min(Math.pow(salary / market, data.elasticity), data.cap);
+        let p = data.base[kind] * data.shortage * salaryFactor * data.location * data.reputation * data.format[kind];
+        p = Math.max(0.02, Math.min(0.98, p));
+        const pct = new Intl.NumberFormat("fr-FR", { style: "percent" });
+        odds.textContent = "Salaire du marché : " + eur.format(market) + ". Chances estimées : " + pct.format(p) +
+          " (avant concurrence des autres cliniques). Frais de recrutement : " + eur.format(data.fee[kind]) + ".";
       }
       let lastSuggested = null;
       form.addEventListener("change", function (event) {
         if (event.target.name !== "gross_monthly_salary") refresh();
+        else showOdds();
       });
+      form.gross_monthly_salary.addEventListener("input", showOdds);
       refresh();
     })();
   </script>

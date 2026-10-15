@@ -2,6 +2,8 @@
 
 Ordre des étapes pour un serveur :
 
+0. Marché du travail : les tentatives de recrutement de toutes les cliniques
+   sont tranchées ensemble (chances, vivier limité, frais d'annonce).
 1. Application des décisions en attente de chaque clinique (le changement
    de format en dernier), puis contrôle des conditions du statut CHV.
 2. Réassort automatique des stocks jusqu'au niveau cible (achats 607).
@@ -34,6 +36,7 @@ from accounting.models import QuarterReport
 from accounting.services import equity, income_statement, money, outstanding_debt, post_entry
 from clinics import ccn
 from clinics.formats import clinic_capabilities, enforce_chv_status, unavailability_reason
+from clinics.recruitment import resolve_market
 from clinics.models import Clinic, StaffMember
 from clinics.services import active_equipment, active_staff
 from decisions.handlers import apply_pending_decisions
@@ -74,6 +77,12 @@ def resolve_quarter(server: GameServer) -> list[QuarterReport]:
     quarter = server.current_quarter
     clinics = list(server.clinics.select_related("server").order_by("id"))
     outcomes = {c.id: ClinicOutcome() for c in clinics}
+
+    # Marché du travail : toutes les tentatives de recrutement du serveur sont
+    # tranchées ensemble (vivier limité, concurrence entre cliniques).
+    hiring = resolve_market(server, quarter, params)
+    for clinic in clinics:
+        outcomes[clinic.id].details["recruitment"] = [o for o in hiring if o["clinic"] == clinic.id]
 
     for clinic in clinics:
         apply_pending_decisions(clinic, quarter, params)

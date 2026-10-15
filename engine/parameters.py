@@ -60,6 +60,32 @@ class SimulationParameters:
     # Qualité : une équipe expérimentée améliore la satisfaction, donc la réputation.
     reputation_experience_weight: float = 0.15
 
+    # --- Difficulté de recrutement (voir clinics/recruitment.py) ------------------
+    recruitment_enabled: float = 1.0  # 0 : tout recrutement réussit (scénarios simplifiés)
+    recruitment_shortage: float = 1.0  # multiplicateur global des chances (0,5 = forte pénurie)
+    # Chances de base, au salaire du marché, en zone dense, réputation moyenne.
+    recruitment_base_vet: float = 0.60  # vétérinaire généraliste (pénurie de praticiens)
+    recruitment_base_specialist: float = 0.35  # vétérinaire spécialiste (vivier très restreint)
+    recruitment_base_asv: float = 0.85
+    # Salaire du marché = minimum conventionnel x (1 + prime de marché).
+    market_premium_vet: float = 0.15
+    market_premium_specialist: float = 0.45
+    market_premium_asv: float = 0.05
+    recruitment_salary_elasticity: float = 3.0  # (salaire proposé / marché) ^ élasticité
+    recruitment_salary_factor_cap: float = 1.6  # surenchérir ne garantit pas le succès
+    recruitment_rural_penalty: float = 0.35  # perte de chances en zone la moins dense
+    recruitment_reputation_weight: float = 0.20  # +/- 20 % entre réputation 0 et 1
+    recruitment_chv_specialist_bonus: float = 0.20  # le plateau technique attire les spécialistes
+    recruitment_chv_night_penalty: float = 0.10  # gardes de nuit : moins de généralistes candidats
+    # Vivier de candidats par trimestre et par serveur (concurrence entre cliniques).
+    candidates_vet_per_quarter: float = 5
+    candidates_specialist_per_quarter: float = 1  # par discipline
+    candidates_asv_per_quarter: float = 10
+    # Frais d'annonce ou de cabinet, dus même si le recrutement échoue (compte 6231).
+    recruitment_fee_vet: float = 1500.0
+    recruitment_fee_specialist: float = 6000.0
+    recruitment_fee_asv: float = 500.0
+
     # --- Formats d'établissement ---------------------------------------------
     # Low-cost : actes standardisés (protocoles, peu de temps « hors acte »),
     # achats groupés de consommables, mais offre restreinte aux actes de base.

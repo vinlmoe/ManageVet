@@ -30,7 +30,9 @@ CHV_SPECIALISTS = ("chirurgie", "chirurgie", "medecine_interne", "medecine_inter
 class BaseCase(TestCase):
     def setUp(self):
         seed_catalog()
-        self.server = GameServer.objects.create(name="Test", grid_width=10, grid_height=10, seed=2, total_quarters=8)
+        self.server = GameServer.objects.create(
+            name="Test", grid_width=10, grid_height=10, seed=2, total_quarters=8, parameters={"recruitment_enabled": 0}
+        )
         generate_zones(self.server, towns=1)
         User = get_user_model()
         self.clinic = create_clinic(self.server, User.objects.create(username="a"), "A", 3, 3)

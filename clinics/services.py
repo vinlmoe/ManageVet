@@ -82,7 +82,30 @@ def hire(
     level: int | None = None,
     specialty: str = "",
 ) -> StaffMember:
-    """Recrute un salarié en respectant la grille de la convention collective."""
+    """Recrute un salarié en respectant la grille de la convention collective.
+
+    Recrutement direct (création de clinique, démo) : la difficulté de
+    recrutement s'applique en amont, lors de la résolution des décisions
+    (voir ``clinics.recruitment``).
+    """
+    level = check_offer(clinic, role, level, specialty, gross_monthly_salary)
+    member = StaffMember.objects.create(
+        clinic=clinic,
+        role=role,
+        name=name,
+        level=level,
+        specialty=specialty,
+        gross_monthly_salary=money(gross_monthly_salary),
+        hired_quarter=clinic.server.current_quarter,
+    )
+    if specialty:
+        # Les actes de la spécialité deviennent possibles : on les propose d'office.
+        activate_enabled_services(clinic, clinic.server.current_quarter, service_type__required_specialty=specialty)
+    return member
+
+
+def check_offer(clinic: Clinic, role: str, level, specialty: str, gross_monthly_salary) -> int:
+    """Valide une offre d'emploi (poste, échelon, spécialité, minimum conventionnel) ; renvoie l'échelon."""
     if role not in StaffMember.Role.values:
         raise OperationError(f"Rôle inconnu : {role}")
     level = int(level) if level is not None else ccn.DEFAULT_LEVEL[role]
@@ -100,19 +123,7 @@ def hire(
         raise OperationError(
             f"Salaire inférieur au minimum conventionnel : {minimum} € brut pour « {ccn.level_label(role, level)} »."
         )
-    member = StaffMember.objects.create(
-        clinic=clinic,
-        role=role,
-        name=name,
-        level=level,
-        specialty=specialty,
-        gross_monthly_salary=money(gross_monthly_salary),
-        hired_quarter=clinic.server.current_quarter,
-    )
-    if specialty:
-        # Les actes de la spécialité deviennent possibles : on les propose d'office.
-        activate_enabled_services(clinic, clinic.server.current_quarter, service_type__required_specialty=specialty)
-    return member
+    return level
 
 
 def dismiss(clinic: Clinic, staff_id: int, severance_months: float) -> StaffMember:

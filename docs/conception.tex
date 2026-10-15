@@ -337,6 +337,53 @@ low-cost. La valeur du point et les taux de majoration sont des paramètres
 de simulation (revalorisation, passage à la convention fusionnée IDCC 3256
 annoncée pour 2027).
 
+\section{Difficulté de recrutement}
+
+Une décision de recrutement est une \emph{tentative}. En début de
+résolution, toutes les tentatives du serveur sont tranchées ensemble.
+
+\paragraph{Chances individuelles.} Pour une offre de salaire $s$ d'une
+clinique $c$ sur un profil $k$ (généraliste, spécialiste, auxiliaire) :
+\[
+  p = \operatorname{borne}_{[0{,}02\,;\,0{,}98]}\!\left(
+    b_k \cdot \mu \cdot \min\!\left(\left(\frac{s}{s^{\text{marché}}_k}\right)^{\eta}, \bar{f}\right)
+    \cdot \left(1 - \lambda\,(1-\delta_c)\right)
+    \cdot \left(1 + \omega\,(2 r_c - 1)\right)
+    \cdot \gamma_{k,c}
+  \right)
+\]
+\begin{itemize}
+  \item $b_k$ : chance de base au salaire du marché (généraliste 0,60,
+    spécialiste 0,35, auxiliaire 0,85) ; $\mu$ : multiplicateur de pénurie
+    (1 par défaut, 0,5 pour une forte pénurie) ;
+  \item $s^{\text{marché}}_k = s_{\min} \times (1 + \pi_k)$, avec des
+    primes de marché de 15\,\% (généralistes), 45\,\% (spécialistes) et
+    5\,\% (auxiliaires) au-dessus du minimum conventionnel ; élasticité
+    $\eta = 3$, plafond $\bar{f} = 1{,}6$ ;
+  \item $\delta_c \in [0, 1]$ : densité de la patientèle autour de la
+    clinique rapportée à la case la plus dense ; pénalité rurale
+    $\lambda = 0{,}35$ ;
+  \item $r_c$ : réputation, poids $\omega = 0{,}2$ ;
+  \item $\gamma_{k,c}$ : effet du format CHV, $+20\,\%$ pour les spécialistes
+    (plateau technique), $-10\,\%$ pour les généralistes (gardes de nuit).
+\end{itemize}
+
+\paragraph{Vivier et concurrence.} Chaque trimestre, le marché du serveur
+compte un nombre limité de candidats : 5 vétérinaires généralistes,
+10 auxiliaires et 1 spécialiste par discipline. Parmi les offres
+acceptées, les plus attractives ($p$ multiplié par un aléa de $\pm 20\,\%$)
+l'emportent dans la limite du vivier ; les autres échouent. Constituer
+l'équipe de 6 spécialistes d'un CHV prend donc plusieurs trimestres, et
+les cliniques se disputent les mêmes profils.
+
+\paragraph{Frais.} Chaque tentative coûte des frais d'annonce ou de
+cabinet (1\,500 euros pour un généraliste, 6\,000 pour un spécialiste,
+500 pour un auxiliaire ; compte 6231), dus même en cas d'échec. Une offre
+invalide (sous le minimum conventionnel) est rejetée sans frais.
+
+L'écran de recrutement affiche le salaire du marché et les chances
+estimées en direct. Le salaire proposé par défaut est celui du marché.
+
 \section{Urgences et cas référés}
 
 Les urgences, l'hospitalisation continue, les actes de spécialistes et le
@@ -397,6 +444,7 @@ Déblocage d'un emprunt & 512 & 164 \\
 Échéance d'emprunt & 6611 / 164 & 512 \\
 Travaux d'aménagement CHV & 2135 & 512 \\
 Majorations de nuit (CHV) & 6411 & 512 \\
+Frais de recrutement & 6231 & 512 \\
 Ventes de marchandises & 512 & 707 \\
 Salaires / charges patronales & 6411 / 645 & 512 \\
 Loyer / honoraires / divers & 6132 / 6226 / 628 & 512 \\

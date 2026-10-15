@@ -18,7 +18,9 @@ from game.models import GameServer
 
 def make_server(name="Test", seed=1):
     """Serveur 10x10 avec deux cliniques A (2,2) et B (7,7), stocks cibles à 100."""
-    server = GameServer.objects.create(name=name, grid_width=10, grid_height=10, seed=seed)
+    server = GameServer.objects.create(
+        name=name, grid_width=10, grid_height=10, seed=seed, parameters={"recruitment_enabled": 0}
+    )
     generate_zones(server, towns=1)
     User = get_user_model()
     a = create_clinic(server, User.objects.create(username=f"{name}-a"), "A", 2, 2)

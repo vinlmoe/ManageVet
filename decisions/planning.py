@@ -90,13 +90,23 @@ def describe(decision: PendingDecision, params) -> tuple[str, Decimal | None]:
             None,
         )
     if k == Kind.HIRE:
+        from clinics import recruitment
+
         salary = Decimal(str(p.get("gross_monthly_salary", 0)))
         cost = salary * 3 * (1 + Decimal(str(params.employer_contribution_rate)))
+        odds = ""
+        if params.recruitment_enabled and p.get("role") in StaffMember.Role.values:
+            level_value = int(p.get("level") or ccn.DEFAULT_LEVEL[p["role"]])
+            spe = p.get("specialty", "")
+            fee = recruitment.fee(p["role"], spe, params)
+            cost += fee
+            probability = recruitment.chance(decision.clinic, p["role"], level_value, spe, salary, params)
+            odds = f" — chances estimées {probability:.0%}, frais {fee:.0f} € dus même en cas d'échec"
         role = StaffMember.Role(p.get("role")).label if p.get("role") in StaffMember.Role.values else p.get("role")
         if p.get("specialty") in Specialty.values:
             role = f"spécialiste en {Specialty(p['specialty']).label.lower()}"
         level = f", {ccn.level_label(p.get('role'), int(p['level']))}" if p.get("level") else ""
-        return f"Recrutement : {p.get('name')} ({role}{level}), {salary} € brut/mois", -cost.quantize(Decimal("1"))
+        return f"Recrutement : {p.get('name')} ({role}{level}), {salary} € brut/mois{odds}", -cost.quantize(Decimal("1"))
     if k == Kind.DISMISS:
         member = StaffMember.objects.filter(pk=p.get("staff_id")).first()
         cost = member.gross_monthly_salary * Decimal(str(params.severance_months)) if member else Decimal("0")

@@ -20,7 +20,10 @@ class DecisionBoardTests(TestCase):
     def setUp(self):
         seed_catalog()
         User = get_user_model()
-        self.server = GameServer.objects.create(name="Partie", grid_width=8, grid_height=8, seed=3)
+        # Le recrutement réussit toujours ici (sa difficulté est testée dans engine/tests/test_recruitment.py).
+        self.server = GameServer.objects.create(
+            name="Partie", grid_width=8, grid_height=8, seed=3, parameters={"recruitment_enabled": 0}
+        )
         generate_zones(self.server, towns=1)
         self.player = User.objects.create_user("etudiant")
         self.rival = User.objects.create_user("rival")
